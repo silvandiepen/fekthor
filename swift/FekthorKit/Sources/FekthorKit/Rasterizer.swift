@@ -37,9 +37,13 @@ public enum Rasterizer {
                 case .fill(let f):
                     let path = CGMutablePath()
                     for ring in f.rings where ring.count >= 3 {
-                        path.move(to: CGPoint(x: ring[0].x, y: ring[0].y))
-                        for p in ring.dropFirst() {
-                            path.addLine(to: CGPoint(x: p.x, y: p.y))
+                        let (start, segs) = PathBuilder.closed(ring)
+                        path.move(to: CGPoint(x: start.x, y: start.y))
+                        for s in segs {
+                            path.addCurve(
+                                to: CGPoint(x: s.end.x, y: s.end.y),
+                                control1: CGPoint(x: s.c1.x, y: s.c1.y),
+                                control2: CGPoint(x: s.c2.x, y: s.c2.y))
                         }
                         path.closeSubpath()
                     }
@@ -67,9 +71,14 @@ public enum Rasterizer {
                 case .stroke(let s):
                     guard s.points.count >= 2 else { continue }
                     let path = CGMutablePath()
-                    path.move(to: CGPoint(x: s.points[0].x, y: s.points[0].y))
-                    for p in s.points.dropFirst() {
-                        path.addLine(to: CGPoint(x: p.x, y: p.y))
+                    let (start, segs) =
+                        s.closed ? PathBuilder.closed(s.points) : PathBuilder.open(s.points)
+                    path.move(to: CGPoint(x: start.x, y: start.y))
+                    for seg in segs {
+                        path.addCurve(
+                            to: CGPoint(x: seg.end.x, y: seg.end.y),
+                            control1: CGPoint(x: seg.c1.x, y: seg.c1.y),
+                            control2: CGPoint(x: seg.c2.x, y: seg.c2.y))
                     }
                     if s.closed { path.closeSubpath() }
                     ctx.addPath(path)

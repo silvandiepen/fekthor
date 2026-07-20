@@ -18,9 +18,12 @@ public enum SVGExport {
     }
 
     static func ringPath(_ ring: [Pt]) -> String {
-        var d = ""
-        for (i, p) in ring.enumerated() {
-            d += (i == 0 ? "M" : "L") + num(p.x) + " " + num(p.y) + " "
+        let (start, segs) = PathBuilder.closed(ring)
+        var d = "M" + num(start.x) + " " + num(start.y) + " "
+        for s in segs {
+            d +=
+                "C" + num(s.c1.x) + " " + num(s.c1.y) + " " + num(s.c2.x) + " " + num(s.c2.y)
+                + " " + num(s.end.x) + " " + num(s.end.y) + " "
         }
         d += "Z"
         return d
@@ -63,9 +66,13 @@ public enum SVGExport {
                 s +=
                     "  <path id=\"\(f.id)\" d=\"\(d)\" fill=\"\(fill)\" fill-rule=\"evenodd\"/>\n"
             case .stroke(let st):
-                var d = ""
-                for (i, p) in st.points.enumerated() {
-                    d += (i == 0 ? "M" : "L") + num(p.x) + " " + num(p.y) + " "
+                let (start, segs) =
+                    st.closed ? PathBuilder.closed(st.points) : PathBuilder.open(st.points)
+                var d = "M" + num(start.x) + " " + num(start.y) + " "
+                for s in segs {
+                    d +=
+                        "C" + num(s.c1.x) + " " + num(s.c1.y) + " " + num(s.c2.x) + " "
+                        + num(s.c2.y) + " " + num(s.end.x) + " " + num(s.end.y) + " "
                 }
                 if st.closed { d += "Z" }
                 s +=
