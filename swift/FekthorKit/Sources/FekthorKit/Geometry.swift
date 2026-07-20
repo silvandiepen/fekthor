@@ -69,6 +69,33 @@ public enum Geometry {
         return out
     }
 
+    /// Moving-average smoothing of an open polyline, endpoints fixed. Removes
+    /// pixel-staircase wobble from a raw skeleton centreline before fitting.
+    public static func smoothPolyline(_ pts: [Pt], window: Int, iterations: Int) -> [Pt] {
+        if pts.count < 3 || window < 1 { return pts }
+        var cur = pts
+        for _ in 0..<iterations {
+            var next = cur
+            let n = cur.count
+            for i in 1..<(n - 1) {
+                var sx = 0.0
+                var sy = 0.0
+                var c = 0
+                for k in -window...window {
+                    let j = i + k
+                    if j >= 0 && j < n {
+                        sx += cur[j].x
+                        sy += cur[j].y
+                        c += 1
+                    }
+                }
+                next[i] = Pt(sx / Double(c), sy / Double(c))
+            }
+            cur = next
+        }
+        return cur
+    }
+
     /// Simplify a closed ring while preserving closure. Anchors at the vertex
     /// furthest from the first so the result is stable under ring rotation.
     public static func simplifyClosed(_ ring: [Pt], epsilon: Double) -> [Pt] {
