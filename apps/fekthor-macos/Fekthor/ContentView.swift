@@ -220,6 +220,14 @@ private struct TrackpadCatcher: NSViewRepresentable {
         override func magnify(with event: NSEvent) {
             onZoom?(event.magnification)
         }
+        // Click-drag to pan.
+        override func mouseDown(with event: NSEvent) {}
+        override func mouseDragged(with event: NSEvent) {
+            onPan?(event.deltaX, event.deltaY)
+        }
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .openHand)
+        }
         // Receive scroll/pinch over the canvas. Clicks here have no target, so
         // capturing them is harmless; toolbar/inspector/zoom controls sit above.
         override func hitTest(_ point: NSPoint) -> NSView? {
