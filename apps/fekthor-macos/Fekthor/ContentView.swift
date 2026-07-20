@@ -126,14 +126,45 @@ private struct ComparisonView: View {
     let busy: Bool
     @Binding var zoom: CGFloat
     @Binding var offset: CGSize
-    @State private var lastZoom: CGFloat = 1
-    @State private var lastOffset: CGSize = .zero
+
+    private func setZoom(_ z: CGFloat) { zoom = min(24, max(1, z)) }
+    private func reset() {
+        zoom = 1
+        offset = .zero
+    }
 
     var body: some View {
-        HSplitView {
-            pane(title: "Source", image: source, busy: false)
-            pane(title: "Vector", image: vector, busy: busy)
+        ZStack(alignment: .bottom) {
+            HSplitView {
+                pane(title: "Source", image: source, busy: false)
+                pane(title: "Vector", image: vector, busy: busy)
+            }
+            .overlay(
+                TrackpadCatcher(
+                    onPan: { dx, dy in
+                        offset = CGSize(width: offset.width + dx, height: offset.height + dy)
+                    },
+                    onZoom: { m in setZoom(zoom * (1 + m)) }
+                )
+            )
+            zoomControls
         }
+    }
+
+    private var zoomControls: some View {
+        HStack(spacing: 2) {
+            Button { setZoom(zoom / 1.25) } label: { Image(systemName: "minus") }
+            Text("\(Int(zoom * 100))%").font(.callout.monospacedDigit()).frame(width: 52)
+            Button { setZoom(zoom * 1.25) } label: { Image(systemName: "plus") }
+            Divider().frame(height: 16)
+            Button { reset() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.quaternary))
+        .padding(.bottom, 12)
     }
 
     private func pane(title: String, image: NSImage?, busy: Bool) -> some View {
@@ -157,33 +188,44 @@ private struct ComparisonView: View {
                     }
                 }
                 .clipped()
-                .contentShape(Rectangle())
-                .gesture(magnify.simultaneously(with: drag))
-                .onTapGesture(count: 2) {
-                    zoom = 1
-                    offset = .zero
-                    lastZoom = 1
-                    lastOffset = .zero
-                }
             }
         }
         .frame(minWidth: 300, minHeight: 340)
     }
+}
 
-    private var magnify: some Gesture {
-        MagnificationGesture()
-            .onChanged { v in zoom = min(24, max(1, lastZoom * v)) }
-            .onEnded { _ in lastZoom = zoom }
+/// Captures trackpad two-finger scroll (pan) and pinch (zoom) events.
+private struct TrackpadCatcher: NSViewRepresentable {
+    let onPan: (CGFloat, CGFloat) -> Void
+    let onZoom: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = CatcherView()
+        v.onPan = onPan
+        v.onZoom = onZoom
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let v = nsView as? CatcherView else { return }
+        v.onPan = onPan
+        v.onZoom = onZoom
     }
 
-    private var drag: some Gesture {
-        DragGesture()
-            .onChanged { v in
-                offset = CGSize(
-                    width: lastOffset.width + v.translation.width,
-                    height: lastOffset.height + v.translation.height)
-            }
-            .onEnded { _ in lastOffset = offset }
+    final class CatcherView: NSView {
+        var onPan: ((CGFloat, CGFloat) -> Void)?
+        var onZoom: ((CGFloat) -> Void)?
+        override func scrollWheel(with event: NSEvent) {
+            onPan?(event.scrollingDeltaX, event.scrollingDeltaY)
+        }
+        override func magnify(with event: NSEvent) {
+            onZoom?(event.magnification)
+        }
+        // Receive scroll/pinch over the canvas. Clicks here have no target, so
+        // capturing them is harmless; toolbar/inspector/zoom controls sit above.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            bounds.contains(convert(point, from: superview)) ? self : nil
+        }
+        override var acceptsFirstResponder: Bool { true }
     }
 }
 
@@ -223,8 +265,16 @@ private struct InspectorView: View {
                         "\(Int(model.colors))"
                     }
                 }
+                if model.mode == .shapes {
+                    slider("Simplicity", value: $model.simplicity, range: 0...1, step: 0.05) {
+                        String(format: "%.0f%%", model.simplicity * 100)
+                    }
+                }
                 slider("Detail", value: $model.epsilon, range: 0.25...4, step: 0.25) {
                     String(format: "%.2f", model.epsilon)
+                }
+                slider("Smoothing", value: $model.smoothing, range: 0...1, step: 0.05) {
+                    String(format: "%.0f%%", model.smoothing * 100)
                 }
             }
 

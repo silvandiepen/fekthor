@@ -12,6 +12,8 @@ final class ConversionModel: ObservableObject {
     @Published var mode: Mode = .shapes
     @Published var colors: Double = 16
     @Published var epsilon: Double = 2.0
+    @Published var simplicity: Double = 0.3
+    @Published var smoothing: Double = 1.0
     /// Working resolution (longest side). Smaller = faster, coarser.
     @Published var resolution: Int = 1024
     @Published var status: String = "Drop, open or paste an image."
@@ -104,13 +106,20 @@ final class ConversionModel: ObservableObject {
         let gen = generation
         isBusy = true
         let mode = self.mode
-        let options = Fekthor.Options(colors: Int(colors), epsilon: epsilon)
+        let smoothing = self.smoothing
+        let options = Fekthor.Options(
+            colors: Int(colors), epsilon: epsilon, simplicity: simplicity, smoothing: smoothing)
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try Fekthor.convert(working, mode: mode, options: options)
-                let cg = result.rendered.cgImage()
-                let w = result.rendered.width
-                let h = result.rendered.height
+                // Render the preview crisply (~2048px) so zooming stays sharp.
+                let displayScale = max(
+                    1.0, 2048.0 / Double(max(working.width, working.height)))
+                let preview = Rasterizer.render(
+                    result.document, smoothing: smoothing, scale: displayScale)
+                let cg = preview.cgImage()
+                let w = preview.width
+                let h = preview.height
                 let fills = result.document.fillCount
                 let strokes = result.document.strokeCount
                 let nodes = result.document.nodeCount
