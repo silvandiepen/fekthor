@@ -1,0 +1,16 @@
+[package]
+name = "fekthor-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line driver for the Fekthor vectorisation engine."
+
+[[bin]]
+name = "fekthor"
+path = "src/main.rs"
+
+[dependencies]
+fekthor-core = { path = "../fekthor-core" }
+serde_json.workspace = true
+anyhow.workspace = true
