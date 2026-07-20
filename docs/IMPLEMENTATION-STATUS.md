@@ -25,28 +25,32 @@ Conversion modes:
 - **Shapes** — colour quantization → optional **region merge** (Simplicity) → **shared-edge
   planar map** (adjacent regions share boundary points, so no gaps/seams) → per-shared-chain
   Douglas-Peucker → Catmull-Rom smoothing. Flat fixture ≈ 96% exact / 38dB PSNR, ~1.8k nodes.
-- **Strokes** — foreground threshold → Zhang-Suen thinning → skeleton-graph edge tracing →
-  constant stroke-width estimate (adjustable) → smoothed stroke paths. Clean line art traces
-  continuous single centrelines.
-- **Gradient** — colour regions with a fitted multi-stop linear gradient per region
-  (least-squares luminance axis + binned mean colours), exported as SVG `<linearGradient>`.
-  3D fixture ≈ 28dB PSNR.
+- **Strokes** — auto-detects line art vs colour. Line art: foreground threshold → Zhang-Suen
+  thinning → skeleton-graph tracing → **tangent-based edge merging** (a line crossing another
+  stays one stroke) → constant width (auto or fixed) → smoothed single centrelines (~hundreds of
+  nodes, not thousands). Colour images: **coloring-plate** mode — trace the shared boundaries
+  between colour regions once each into clean single outlines. Near-grey ink snaps to black.
+- **Gradient** — runs on the same gap-free planar map, fitting a multi-stop linear gradient per
+  face (least-squares luminance axis + binned mean colours), exported as SVG `<linearGradient>`.
+  3D fixture ≈ 30.7dB PSNR.
 
-Key modules: `ColorQuantizer`, `ComponentMerge`, `PlanarMap`, `ContourTracer` (Vision),
-`Skeleton` / `SkeletonGraph`, `GradientFit`, `Geometry` (Douglas-Peucker), `PathBuilder`
-(Catmull-Rom smoothing), `Rasterizer` (CoreGraphics render-back + scale), `Comparer`,
-`SVGExport`, `Document`.
+Key modules: `ColorQuantizer` (fixed + auto/AA-excluding), `ComponentMerge`, `PlanarMap`
+(faces + shared boundary chains), `Skeleton` / `SkeletonGraph` (trace + merge), `GradientFit`,
+`Geometry` (Douglas-Peucker + polyline smoothing), `PathBuilder` (Catmull-Rom smoothing),
+`Rasterizer` (CoreGraphics render-back + scale), `Comparer`, `SVGExport`, `Document`.
 
 ## Controls
 
 - **Mode** — Shapes / Strokes / Gradient.
 - **Resolution** — Fast 512 / Balanced 1024 / Detailed 2048; imports are downscaled to a
   working image before vectorising (fast, avoids node explosions on large sources).
-- **Colors** — palette size (Shapes/Gradient).
-- **Simplicity** — region-merge strength (Shapes): merges near-identical-colour neighbours and
-  absorbs small regions into their closest match.
+- **Auto colours** — detect dominant flat colours and exclude anti-aliasing blends; off falls
+  back to a fixed count (Colours / Max colours slider).
+- **Simplicity** — region-merge strength (Shapes).
 - **Detail** — Douglas-Peucker tolerance.
 - **Smoothing** — curve strength (0 polygonal … 1 full).
+- **Lines from** (Strokes) — Auto / Centreline / Region edges.
+- **Line width** (Strokes) — Auto (estimated) or a fixed width for all lines.
 
 ## macOS app
 
@@ -55,10 +59,21 @@ inspector sidebar (controls + result metrics + processing loader), synchronized 
 comparison with click-drag and two-finger pan, pinch + button zoom (−/%/+/Fit), crisp
 high-resolution vector preview, and SVG export.
 
+## Quality (fixtures)
+
+- Shapes (flat): ~96% exact / ~30dB, gap-free, ~1.4k nodes.
+- Strokes (line art): clean single lines, ~440 nodes.
+- Gradient (3D): ~30.7dB, gap-free.
+
+## Testing / CI
+
+`swift test` (8 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
+gradient paint, round-trip fidelity). GitHub Actions builds and tests the engine and builds the
+macOS app on `macos-15` (Xcode 16); green on `main`.
+
 ## Known gaps / next
 
-- Strokes on colour images should first build a "coloring plate" (edges) then trace lines.
-- Bring Gradient onto the planar map + Simplicity/Smoothing path.
-- Stroke spur pruning to reduce node counts further.
-- Bezier-native document (store curves, not just points).
-- Tests, CI, and the `.fekthor` project format are not yet implemented.
+- Junction handling in Strokes still leaves small cap pile-ups at crossings.
+- Gradient node counts are high on photo-like inputs (band boundaries).
+- Bezier-native document (store curves, not just resampled points).
+- `.fekthor` project format, undo/redo, and region-level correction UI are not yet implemented.
