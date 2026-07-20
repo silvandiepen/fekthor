@@ -26,13 +26,15 @@ The initial product is a native macOS document application using SwiftUI with Ap
 
 **Reasoning:** The intended workflow benefits from native file handling, clipboard formats, PDF support, pointer interaction and offline distribution. Starting with one platform reduces scope while the engine is still being proven.
 
-## D-004 — Reusable Rust vectorisation core
+## D-004 — Reusable Swift vectorisation engine
 
-**Status:** Accepted
+**Status:** Revised 2026-07-20 (supersedes the original Rust-core decision)
 
-Image analysis, topology, fitting, document geometry, diagnostics and SVG export belong in a reusable Rust core.
+Image analysis, topology, fitting, document geometry, diagnostics and SVG export belong in a reusable, UI-free **Swift** package (`swift/FekthorKit`), shared by the native apps and a headless CLI target.
 
-**Reasoning:** The engine requires predictable performance, memory safety, extensive testing and potential reuse by a CLI, other platforms or WebAssembly. UI-specific code should not own core geometry.
+**Reasoning:** Fekthor is a native macOS product built in the same Swift/monorepo style as the owner's other apps (GitKit/GitFolder). A single Swift toolchain removes the Rust↔Swift bridge (previously open decision O-001), lets the engine use native frameworks — Vision for contour tracing, CoreGraphics for rasterisation and render-back, Accelerate where profiling warrants — and keeps the whole codebase in one language and one repository. The engine remains deterministic, testable without UI, and independent of the app layer.
+
+**Original decision (superseded):** A reusable Rust core exposed to Swift through UniFFI/C-ABI. Dropped because the product is macOS-native and the bridge added cost without a cross-platform requirement. O-001 (native bridge technology) is therefore closed as not applicable.
 
 ## D-005 — Deterministic engine before machine learning
 
@@ -114,13 +116,13 @@ The MVP estimates one robust width per stroke path or logical edge. Variable-wid
 
 **Reasoning:** Constant-width output covers clean line art, is broadly editable and reduces the initial research surface. The internal model should remain extensible for later width profiles.
 
-## D-015 — Core tests must run without macOS
+## D-015 — Engine is testable headlessly without the app
 
-**Status:** Accepted
+**Status:** Revised 2026-07-20 (the engine now depends on macOS frameworks)
 
-Most engine tests, fixtures and SVG validation run on Linux as well as macOS. Native integration tests remain macOS-specific.
+The `FekthorKit` engine is UI-free and exercised headlessly via `swift test` and the `fekthor` CLI target, separately from the SwiftUI app. It depends on macOS frameworks (Vision, CoreGraphics), so tests run on macOS rather than Linux.
 
-**Reasoning:** This improves iteration speed, reduces CI cost and enforces separation between the engine and the application.
+**Reasoning:** Keeping the engine independent of the app layer preserves fast iteration and clear separation. The original Linux-portability goal no longer applies now that the engine is native Swift using Apple frameworks; CI runs on macOS runners.
 
 ## D-016 — No dependency adoption without licence review
 
@@ -166,17 +168,17 @@ Unchanged regions and elements retain stable IDs where possible.
 
 The following require prototypes or product evidence:
 
-### O-001 — Native bridge technology
+### O-001 — Native bridge technology — **Closed 2026-07-20**
 
-Compare a minimal C ABI against generated UniFFI bindings for ownership clarity, performance and Swift ergonomics.
+Not applicable: the engine is native Swift (`FekthorKit`), so there is no Rust↔Swift bridge to design. See revised D-004.
 
 ### O-002 — Skeletonisation algorithm
 
-Select after the Phase 1 fixture comparison. The architecture must permit replacement.
+Select after the Phase 1 fixture comparison. The architecture must permit replacement. Current Strokes-mode work uses Zhang-Suen thinning; a medial-axis alternative may be evaluated behind the same interface.
 
-### O-003 — Reference raster renderer
+### O-003 — Reference raster renderer — **Closed 2026-07-20**
 
-Choose a deterministic engine-neutral renderer for tests. The macOS display renderer may remain Core Graphics.
+Resolved: CoreGraphics is the render-back reference renderer (`Rasterizer`), and Vision provides contour tracing. Both are deterministic on macOS and used for the render-back comparison harness.
 
 ### O-004 — Initial distribution model
 

@@ -37,7 +37,7 @@ Fekthor also supports ordinary filled-shape tracing and combines both approaches
 
 ## Initial platform and architecture
 
-The initial product is a native macOS application built with SwiftUI. The vectorisation engine is a reusable Rust library exposed through a narrow native interface. The engine is deterministic and local-first; optional ML components assist classification and repair but do not replace the geometric pipeline.
+The initial product is a native macOS application built with SwiftUI, organised as a monorepo in the same style as GitKit/GitFolder: `apps/` for the macOS app, `swift/FekthorKit` for the shared, UI-free vectorisation engine (a SwiftPM package with a headless `fekthor` CLI target), and `docs/` for the plan. The engine is deterministic and local-first, using native frameworks (Vision for contour tracing, CoreGraphics for rasterisation and render-back); optional ML components assist classification and repair but do not replace the geometric pipeline.
 
 ## Repository documentation
 
