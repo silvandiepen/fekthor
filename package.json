@@ -1,0 +1,20 @@
+{
+  "name": "fekthor-monorepo",
+  "private": true,
+  "type": "module",
+  "description": "Fekthor — a monorepo for the native macOS raster-to-vector app and its shared Swift engine.",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "engine:build": "swift build --package-path swift/FekthorKit",
+    "engine:test": "swift test --package-path swift/FekthorKit",
+    "engine:run": "swift run --package-path swift/FekthorKit fekthor",
+    "macos:generate": "cd apps/fekthor-macos && xcodegen generate",
+    "macos:build": "cd apps/fekthor-macos && xcodegen generate && xcodebuild -project Fekthor.xcodeproj -scheme Fekthor -configuration Debug build"
+  }
+}
