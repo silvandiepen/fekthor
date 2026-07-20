@@ -11,11 +11,14 @@ public enum Fekthor {
         public var simplicity: Double
         /// Curve smoothing strength (0 = polygonal, 1 = full).
         public var smoothing: Double
+        /// Auto-detect dominant colours (excludes anti-aliasing) vs fixed count.
+        public var autoColors: Bool
         /// Overrides the estimated stroke width in Strokes mode (adjustable).
         public var strokeWidth: Double?
         public init(
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
-            simplicity: Double = 0.3, smoothing: Double = 1.0, strokeWidth: Double? = nil
+            simplicity: Double = 0.3, smoothing: Double = 1.0, autoColors: Bool = true,
+            strokeWidth: Double? = nil
         ) {
             self.colors = colors
             self.epsilon = epsilon
@@ -23,6 +26,7 @@ public enum Fekthor {
             self.threshold = threshold
             self.simplicity = simplicity
             self.smoothing = smoothing
+            self.autoColors = autoColors
             self.strokeWidth = strokeWidth
         }
     }
@@ -55,7 +59,7 @@ public enum Fekthor {
                 img,
                 config: ShapesConfig(
                     colors: options.colors, iters: 8, epsilon: options.epsilon,
-                    simplicity: options.simplicity))
+                    simplicity: options.simplicity, autoColors: options.autoColors))
         case .strokes:
             doc = StrokesMode.run(
                 img,
@@ -66,7 +70,8 @@ public enum Fekthor {
             doc = GradientMode.run(
                 img,
                 config: GradientConfig(
-                    colors: options.colors, epsilon: options.epsilon, minArea: options.minArea))
+                    colors: options.colors, epsilon: options.epsilon, minArea: options.minArea,
+                    autoColors: options.autoColors))
         }
         let svg = SVGExport.toSVG(doc, smoothing: options.smoothing)
         let rendered = Rasterizer.render(doc, smoothing: options.smoothing)

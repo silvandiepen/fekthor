@@ -10,11 +10,17 @@ public struct ShapesConfig {
     public var epsilon: Double
     /// 0 = keep every region; 1 = aggressively merge similar / small regions.
     public var simplicity: Double
-    public init(colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, simplicity: Double = 0.3) {
+    /// Auto-detect dominant colours (excludes anti-aliasing) vs fixed k-means.
+    public var autoColors: Bool
+    public init(
+        colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, simplicity: Double = 0.3,
+        autoColors: Bool = true
+    ) {
         self.colors = colors
         self.iters = iters
         self.epsilon = epsilon
         self.simplicity = simplicity
+        self.autoColors = autoColors
     }
 }
 
@@ -22,7 +28,10 @@ public enum ShapesMode {
     public static func run(_ img: RasterImage, config: ShapesConfig = ShapesConfig())
         -> VectorDocument
     {
-        let q = ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
+        let q =
+            config.autoColors
+            ? ColorQuantizer.quantizeAuto(img, maxColors: max(2, config.colors), minFraction: 0.004)
+            : ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
 
         // Optionally merge similar / small regions for cleaner, simpler shapes.
         let labels: [Int]

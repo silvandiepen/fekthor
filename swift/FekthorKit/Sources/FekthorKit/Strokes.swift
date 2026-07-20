@@ -24,10 +24,17 @@ public struct StrokesConfig {
 
 public enum StrokesMode {
     /// Sample a representative ink colour from the source under a skeleton point.
+    /// Near-grey dark ink is snapped to pure black so B&W line art gets clean
+    /// black lines instead of muddy near-blacks.
     static func sampleColor(_ img: RasterImage, _ p: Pt) -> RGB {
         let x = min(max(Int(p.x), 0), img.width - 1)
         let y = min(max(Int(p.y), 0), img.height - 1)
         let px = img.pixel(x, y)
+        let r = Int(px.0), g = Int(px.1), b = Int(px.2)
+        let spread = max(r, max(g, b)) - min(r, min(g, b))
+        if spread < 28 && max(r, max(g, b)) < 128 {
+            return (0, 0, 0)
+        }
         return (px.0, px.1, px.2)
     }
 

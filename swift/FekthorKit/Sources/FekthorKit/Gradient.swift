@@ -10,15 +10,17 @@ public struct GradientConfig {
     public var epsilon: Double
     public var minArea: Double
     public var stops: Int
+    public var autoColors: Bool
     public init(
         colors: Int = 20, iters: Int = 8, epsilon: Double = 1.0, minArea: Double = 12.0,
-        stops: Int = 6
+        stops: Int = 6, autoColors: Bool = true
     ) {
         self.colors = colors
         self.iters = iters
         self.epsilon = epsilon
         self.minArea = minArea
         self.stops = stops
+        self.autoColors = autoColors
     }
 }
 
@@ -26,7 +28,10 @@ public enum GradientMode {
     public static func run(_ img: RasterImage, config: GradientConfig = GradientConfig())
         -> VectorDocument
     {
-        let q = ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
+        let q =
+            config.autoColors
+            ? ColorQuantizer.quantizeAuto(img, maxColors: max(2, config.colors), minFraction: 0.003)
+            : ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
         var regs = ContourTracer.regions(q)
         regs.sort { a, b in
             if a.area != b.area { return a.area > b.area }

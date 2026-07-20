@@ -269,9 +269,12 @@ private struct InspectorView: View {
                 .onChange(of: model.resolution) { _, _ in model.resolutionChanged() }
 
                 if model.mode == .shapes || model.mode == .gradient {
-                    slider("Colors", value: $model.colors, range: 2...32, step: 1) {
-                        "\(Int(model.colors))"
-                    }
+                    Toggle("Auto colours", isOn: $model.autoColors)
+                        .onChange(of: model.autoColors) { _, _ in model.convert() }
+                    slider(
+                        model.autoColors ? "Max colours" : "Colours", value: $model.colors,
+                        range: 2...32, step: 1
+                    ) { "\(Int(model.colors))" }
                 }
                 if model.mode == .shapes {
                     slider("Simplicity", value: $model.simplicity, range: 0...1, step: 0.05) {

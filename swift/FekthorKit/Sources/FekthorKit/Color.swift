@@ -19,6 +19,75 @@ public enum ColorQuantizer {
         return dr * dr + dg * dg + db * db
     }
 
+    /// Assign every pixel to the nearest palette colour.
+    static func assign(_ img: RasterImage, palette: [RGB]) -> Quantized {
+        let n = img.width * img.height
+        var indices = [Int](repeating: 0, count: n)
+        for i in 0..<n {
+            let o = i * 4
+            let c: RGB = (img.data[o], img.data[o + 1], img.data[o + 2])
+            var best = 0
+            var bestd = Int.max
+            for (j, p) in palette.enumerated() {
+                let d = dist2(c, p)
+                if d < bestd {
+                    bestd = d
+                    best = j
+                }
+            }
+            indices[i] = best
+        }
+        return Quantized(width: img.width, height: img.height, palette: palette, indices: indices)
+    }
+
+    /// Detect the image's dominant flat colours, excluding anti-aliasing.
+    ///
+    /// Anti-aliasing colours sit in thin edge bands (low frequency) between two
+    /// real colours, so a frequency-ranked, spread-filtered pick keeps the real
+    /// flat colours and drops the blends. Every pixel then snaps to the nearest.
+    public static func quantizeAuto(
+        _ img: RasterImage, maxColors: Int, minFraction: Double
+    ) -> Quantized {
+        let n = img.width * img.height
+        var hist: [Int: (count: Int, sum: (Int, Int, Int))] = [:]
+        for i in 0..<n {
+            let o = i * 4
+            let r = Int(img.data[o]), g = Int(img.data[o + 1]), b = Int(img.data[o + 2])
+            let key = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3)
+            var e = hist[key] ?? (0, (0, 0, 0))
+            e.count += 1
+            e.sum.0 += r
+            e.sum.1 += g
+            e.sum.2 += b
+            hist[key] = e
+        }
+        var buckets: [(count: Int, color: RGB)] = hist.values.map { v in
+            (
+                v.count,
+                (
+                    UInt8(v.sum.0 / v.count), UInt8(v.sum.1 / v.count),
+                    UInt8(v.sum.2 / v.count)
+                )
+            )
+        }
+        buckets.sort {
+            if $0.count != $1.count { return $0.count > $1.count }
+            return $0.color < $1.color
+        }
+        let minCount = Int(Double(n) * minFraction)
+        let minSep2 = 28 * 28
+        var palette: [RGB] = []
+        for b in buckets {
+            if palette.count >= maxColors { break }
+            if b.count < minCount && !palette.isEmpty { break }
+            if palette.allSatisfy({ dist2($0, b.color) >= minSep2 }) {
+                palette.append(b.color)
+            }
+        }
+        if palette.isEmpty { palette.append(buckets.first?.color ?? (0, 0, 0)) }
+        return assign(img, palette: palette)
+    }
+
     /// Deterministic coarse-histogram seeded k-means (Lloyd) over RGB.
     public static func quantize(_ img: RasterImage, k: Int, iters: Int) -> Quantized {
         let n = img.width * img.height

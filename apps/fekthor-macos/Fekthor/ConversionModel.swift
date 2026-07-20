@@ -10,6 +10,7 @@ final class ConversionModel: ObservableObject {
     @Published var sourceImage: NSImage?
     @Published var vectorImage: NSImage?
     @Published var mode: Mode = .shapes
+    @Published var autoColors: Bool = true
     @Published var colors: Double = 16
     @Published var epsilon: Double = 2.0
     @Published var simplicity: Double = 0.3
@@ -111,7 +112,7 @@ final class ConversionModel: ObservableObject {
         let smoothing = self.smoothing
         let options = Fekthor.Options(
             colors: Int(colors), epsilon: epsilon, simplicity: simplicity, smoothing: smoothing,
-            strokeWidth: strokeWidthAuto ? nil : strokeWidth)
+            autoColors: autoColors, strokeWidth: strokeWidthAuto ? nil : strokeWidth)
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try Fekthor.convert(working, mode: mode, options: options)
