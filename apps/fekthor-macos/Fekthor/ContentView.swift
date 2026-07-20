@@ -278,6 +278,15 @@ private struct InspectorView: View {
                         String(format: "%.0f%%", model.simplicity * 100)
                     }
                 }
+                if model.mode == .strokes {
+                    Toggle("Auto line width", isOn: $model.strokeWidthAuto)
+                        .onChange(of: model.strokeWidthAuto) { _, _ in model.convert() }
+                    if !model.strokeWidthAuto {
+                        slider("Line width", value: $model.strokeWidth, range: 0.5...30, step: 0.5) {
+                            String(format: "%.1f", model.strokeWidth)
+                        }
+                    }
+                }
                 slider("Detail", value: $model.epsilon, range: 0.25...4, step: 0.25) {
                     String(format: "%.2f", model.epsilon)
                 }
