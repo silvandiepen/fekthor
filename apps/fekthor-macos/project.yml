@@ -1,0 +1,35 @@
+name: Fekthor
+options:
+  bundleIdPrefix: app.hakobs
+  deploymentTarget:
+    macOS: "14.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: "38MGF83L2L"
+
+packages:
+  FekthorKit:
+    path: ../../swift/FekthorKit
+
+targets:
+  Fekthor:
+    type: application
+    platform: macOS
+    sources:
+      - path: Fekthor
+    dependencies:
+      - package: FekthorKit
+        product: FekthorKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.hakobs.fekthor
+        INFOPLIST_FILE: Fekthor/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Fekthor/Fekthor.entitlements
+        ENABLE_HARDENED_RUNTIME: true
+        CODE_SIGN_STYLE: Automatic
+        COMBINE_HIDPI_IMAGES: true
