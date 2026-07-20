@@ -5,67 +5,190 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @StateObject private var model = ConversionModel()
     @State private var showInspector = true
+    @State private var zoom: CGFloat = 1
+    @State private var offset: CGSize = .zero
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                HSplitView {
-                    ImagePane(title: "Source", image: model.sourceImage, busy: false)
-                    ImagePane(title: "Vector", image: model.vectorImage, busy: model.isBusy)
-                }
-                Divider()
-                HStack {
-                    Text(model.status).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    if model.hasResult {
-                        Text(
-                            String(
-                                format: "exact %.1f%%  ·  PSNR %.1f dB  ·  nodes %d",
-                                model.exactPct, model.psnr, model.nodes)
-                        )
-                        .font(.system(.callout, design: .monospaced))
-                        .foregroundStyle(.secondary)
+            Group {
+                if model.sourceImage == nil {
+                    EmptyStateView(model: model)
+                } else {
+                    VStack(spacing: 0) {
+                        ComparisonView(
+                            source: model.sourceImage, vector: model.vectorImage,
+                            busy: model.isBusy, zoom: $zoom, offset: $offset)
+                        Divider()
+                        statusBar
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
             }
             .navigationTitle("Fekthor")
-            .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        model.openPanel()
-                    } label: {
-                        Label("Open", systemImage: "photo.badge.plus")
-                    }
-                }
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button {
-                        model.exportSVG()
-                    } label: {
-                        Label("Export SVG", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(!model.hasResult)
-                    Button {
-                        showInspector.toggle()
-                    } label: {
-                        Label("Inspector", systemImage: "sidebar.trailing")
-                    }
-                }
-            }
+            .toolbar { toolbarContent }
             .inspector(isPresented: $showInspector) {
                 InspectorView(model: model)
                     .inspectorColumnWidth(min: 250, ideal: 290, max: 380)
             }
-            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                model.handleDrop(providers)
+            .onDrop(of: [.fileURL], isTargeted: nil) { model.handleDrop($0) }
+            .onChange(of: model.imageGeneration) { _, _ in
+                zoom = 1
+                offset = .zero
             }
             .onAppear { model.loadLaunchArgumentIfPresent() }
         }
     }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            Button { model.openPanel() } label: { Label("Open", systemImage: "photo.badge.plus") }
+            Button { model.paste() } label: { Label("Paste", systemImage: "clipboard") }
+                .keyboardShortcut("v", modifiers: .command)
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            if zoom != 1 || offset != .zero {
+                Button {
+                    zoom = 1
+                    offset = .zero
+                } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
+            }
+            Button { model.exportSVG() } label: {
+                Label("Export SVG", systemImage: "square.and.arrow.up")
+            }
+            .disabled(!model.hasResult)
+            Button { showInspector.toggle() } label: {
+                Label("Inspector", systemImage: "sidebar.trailing")
+            }
+        }
+    }
+
+    private var statusBar: some View {
+        HStack {
+            Text(model.status).foregroundStyle(.secondary).lineLimit(1)
+            Spacer()
+            if model.hasResult {
+                Text(
+                    String(
+                        format: "exact %.1f%%  ·  PSNR %.1f dB  ·  nodes %d",
+                        model.exactPct, model.psnr, model.nodes)
+                )
+                .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+    }
 }
 
-/// The settings sidebar: vectorise controls and the result summary.
+// MARK: - Empty state
+
+private struct EmptyStateView: View {
+    @ObservedObject var model: ConversionModel
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color(nsColor: .windowBackgroundColor))
+            VStack(spacing: 16) {
+                Image(systemName: "square.and.arrow.down.on.square")
+                    .font(.system(size: 52)).foregroundStyle(.tertiary)
+                Text("Drop an image here").font(.title2).fontWeight(.medium)
+                Text("Turn line art and flat images into editable strokes and shapes.")
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Button { model.openPanel() } label: { Label("Open Image", systemImage: "folder") }
+                        .controlSize(.large)
+                    Button { model.paste() } label: { Label("Paste", systemImage: "clipboard") }
+                        .controlSize(.large)
+                        .keyboardShortcut("v", modifiers: .command)
+                }
+                .padding(.top, 4)
+                Text("PNG · JPEG · TIFF · HEIC · WebP")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+            .padding(40)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        style: StrokeStyle(lineWidth: 2, dash: [8, 6])
+                    )
+                    .foregroundStyle(.quaternary)
+                    .padding(28)
+            )
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { model.handleDrop($0) }
+    }
+}
+
+// MARK: - Synchronized zoom/pan comparison
+
+private struct ComparisonView: View {
+    let source: NSImage?
+    let vector: NSImage?
+    let busy: Bool
+    @Binding var zoom: CGFloat
+    @Binding var offset: CGSize
+    @State private var lastZoom: CGFloat = 1
+    @State private var lastOffset: CGSize = .zero
+
+    var body: some View {
+        HSplitView {
+            pane(title: "Source", image: source, busy: false)
+            pane(title: "Vector", image: vector, busy: busy)
+        }
+    }
+
+    private func pane(title: String, image: NSImage?, busy: Bool) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title).font(.headline)
+                Spacer()
+            }
+            .padding(8)
+            GeometryReader { _ in
+                ZStack {
+                    Rectangle().fill(Color(nsColor: .textBackgroundColor))
+                    if let image {
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .scaleEffect(zoom)
+                            .offset(offset)
+                            .opacity(busy ? 0.5 : 1)
+                    }
+                }
+                .clipped()
+                .contentShape(Rectangle())
+                .gesture(magnify.simultaneously(with: drag))
+                .onTapGesture(count: 2) {
+                    zoom = 1
+                    offset = .zero
+                    lastZoom = 1
+                    lastOffset = .zero
+                }
+            }
+        }
+        .frame(minWidth: 300, minHeight: 340)
+    }
+
+    private var magnify: some Gesture {
+        MagnificationGesture()
+            .onChanged { v in zoom = min(24, max(1, lastZoom * v)) }
+            .onEnded { _ in lastZoom = zoom }
+    }
+
+    private var drag: some Gesture {
+        DragGesture()
+            .onChanged { v in
+                offset = CGSize(
+                    width: lastOffset.width + v.translation.width,
+                    height: lastOffset.height + v.translation.height)
+            }
+            .onEnded { _ in lastOffset = offset }
+    }
+}
+
+// MARK: - Inspector
+
 private struct InspectorView: View {
     @ObservedObject var model: ConversionModel
 
@@ -79,30 +202,26 @@ private struct InspectorView: View {
                 }
                 .onChange(of: model.mode) { _, _ in model.convert() }
 
+                Picker("Resolution", selection: $model.resolution) {
+                    Text("Fast · 512").tag(512)
+                    Text("Balanced · 1024").tag(1024)
+                    Text("Detailed · 2048").tag(2048)
+                }
+                .onChange(of: model.resolution) { _, _ in model.resolutionChanged() }
+
                 if model.mode == .shapes || model.mode == .gradient {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Text("Colors")
-                            Spacer()
-                            Text("\(Int(model.colors))").monospacedDigit().foregroundStyle(
-                                .secondary)
-                        }
-                        Slider(value: $model.colors, in: 2...32, step: 1) { editing in
-                            if !editing { model.convert() }
-                        }
+                    slider("Colors", value: $model.colors, range: 2...32, step: 1) {
+                        "\(Int(model.colors))"
                     }
                 }
+                slider("Detail", value: $model.epsilon, range: 0.25...4, step: 0.25) {
+                    String(format: "%.2f", model.epsilon)
+                }
+            }
 
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text("Detail")
-                        Spacer()
-                        Text(String(format: "%.2f", model.epsilon)).monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(value: $model.epsilon, in: 0.25...4, step: 0.25) { editing in
-                        if !editing { model.convert() }
-                    }
+            if !model.sourceInfo.isEmpty {
+                Section("Source") {
+                    LabeledContent("Working size", value: model.sourceInfo)
                 }
             }
 
@@ -122,41 +241,20 @@ private struct InspectorView: View {
         }
         .formStyle(.grouped)
     }
-}
 
-/// A titled image pane with a soft backdrop.
-private struct ImagePane: View {
-    let title: String
-    let image: NSImage?
-    let busy: Bool
-
-    var body: some View {
-        VStack(spacing: 0) {
+    private func slider(
+        _ title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double,
+        _ label: @escaping () -> String
+    ) -> some View {
+        VStack(alignment: .leading) {
             HStack {
-                Text(title).font(.headline)
+                Text(title)
                 Spacer()
+                Text(label()).monospacedDigit().foregroundStyle(.secondary)
             }
-            .padding(8)
-            ZStack {
-                Rectangle().fill(Color(nsColor: .textBackgroundColor))
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFit()
-                        .padding(12)
-                        .opacity(busy ? 0.5 : 1)
-                } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "square.dashed")
-                            .font(.largeTitle)
-                            .foregroundStyle(.tertiary)
-                        Text(title == "Source" ? "Open or drop an image" : "Vector preview")
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            Slider(value: value, in: range, step: step) { editing in
+                if !editing { model.convert() }
             }
         }
-        .frame(minWidth: 320, minHeight: 360)
     }
 }
