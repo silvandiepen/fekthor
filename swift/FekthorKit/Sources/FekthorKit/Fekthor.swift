@@ -7,13 +7,17 @@ public enum Fekthor {
         public var epsilon: Double
         public var minArea: Double
         public var threshold: UInt8
+        /// Overrides the estimated stroke width in Strokes mode (adjustable).
+        public var strokeWidth: Double?
         public init(
-            colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128
+            colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
+            strokeWidth: Double? = nil
         ) {
             self.colors = colors
             self.epsilon = epsilon
             self.minArea = minArea
             self.threshold = threshold
+            self.strokeWidth = strokeWidth
         }
     }
 
@@ -46,7 +50,13 @@ public enum Fekthor {
                 config: ShapesConfig(
                     colors: options.colors, iters: 8, epsilon: options.epsilon,
                     minArea: options.minArea))
-        case .strokes, .gradient:
+        case .strokes:
+            doc = StrokesMode.run(
+                img,
+                config: StrokesConfig(
+                    threshold: options.threshold, epsilon: max(1.0, options.epsilon),
+                    widthOverride: options.strokeWidth))
+        case .gradient:
             throw EngineError.unsupported("mode not implemented yet: \(mode.rawValue)")
         }
         let svg = SVGExport.toSVG(doc)
