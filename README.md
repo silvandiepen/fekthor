@@ -58,6 +58,7 @@ The initial product is a native macOS application built with SwiftUI, organised 
 - [Research plan](docs/RESEARCH.md)
 - [Privacy and security](docs/PRIVACY-SECURITY.md)
 - [Architecture decisions](docs/DECISIONS.md)
+- [Implementation status](docs/IMPLEMENTATION-STATUS.md) — what is actually built
 - [Agent implementation guide](AGENTS.md)
 
 ## Implementation tracking
