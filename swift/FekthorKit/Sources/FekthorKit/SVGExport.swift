@@ -17,8 +17,8 @@ public enum SVGExport {
         String(format: "#%02x%02x%02x", c[0], c[1], c[2])
     }
 
-    static func ringPath(_ ring: [Pt]) -> String {
-        let (start, segs) = PathBuilder.closed(ring)
+    static func ringPath(_ ring: [Pt], smoothing: Double) -> String {
+        let (start, segs) = PathBuilder.closed(ring, strength: smoothing)
         var d = "M" + num(start.x) + " " + num(start.y) + " "
         for s in segs {
             d +=
@@ -29,7 +29,7 @@ public enum SVGExport {
         return d
     }
 
-    public static func toSVG(_ doc: VectorDocument) -> String {
+    public static func toSVG(_ doc: VectorDocument, smoothing: Double = 1) -> String {
         // Build gradient defs first, assigning each a stable id.
         var defs = ""
         var gradId: [Int: String] = [:]
@@ -57,7 +57,7 @@ public enum SVGExport {
             switch el {
             case .fill(let f):
                 var d = ""
-                for ring in f.rings where ring.count >= 3 { d += ringPath(ring) }
+                for ring in f.rings where ring.count >= 3 { d += ringPath(ring, smoothing: smoothing) }
                 let fill: String
                 switch f.paint {
                 case .solid(let rgb): fill = hex(rgb)
@@ -67,7 +67,9 @@ public enum SVGExport {
                     "  <path id=\"\(f.id)\" d=\"\(d)\" fill=\"\(fill)\" fill-rule=\"evenodd\"/>\n"
             case .stroke(let st):
                 let (start, segs) =
-                    st.closed ? PathBuilder.closed(st.points) : PathBuilder.open(st.points)
+                    st.closed
+                    ? PathBuilder.closed(st.points, strength: smoothing)
+                    : PathBuilder.open(st.points, strength: smoothing)
                 var d = "M" + num(start.x) + " " + num(start.y) + " "
                 for s in segs {
                     d +=

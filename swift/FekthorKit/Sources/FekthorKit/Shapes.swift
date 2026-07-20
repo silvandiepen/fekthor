@@ -8,12 +8,13 @@ public struct ShapesConfig {
     public var colors: Int
     public var iters: Int
     public var epsilon: Double
-    public var minArea: Double
-    public init(colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, minArea: Double = 6.0) {
+    /// 0 = keep every region; 1 = aggressively merge similar / small regions.
+    public var simplicity: Double
+    public init(colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, simplicity: Double = 0.3) {
         self.colors = colors
         self.iters = iters
         self.epsilon = epsilon
-        self.minArea = minArea
+        self.simplicity = simplicity
     }
 }
 
@@ -22,17 +23,33 @@ public enum ShapesMode {
         -> VectorDocument
     {
         let q = ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
+
+        // Optionally merge similar / small regions for cleaner, simpler shapes.
+        let labels: [Int]
+        let colors: [RGB]
+        if config.simplicity > 0 {
+            let s = min(1.0, max(0.0, config.simplicity))
+            let minArea = Int(Double(img.width * img.height) * 0.0006 * s)
+            let colorThreshold = 40.0 * 40.0 * s
+            (labels, colors) = ComponentMerge.merge(
+                indices: q.indices, palette: q.palette, width: img.width, height: img.height,
+                minArea: minArea, colorThreshold: colorThreshold)
+        } else {
+            labels = q.indices
+            colors = q.palette
+        }
+
         // Shared-edge planar map: adjacent regions use identical boundary points
         // (no gaps), and each shared chain is simplified once (removes jitter).
         let faces = PlanarMap.faces(
-            labels: q.indices, width: img.width, height: img.height, epsilon: config.epsilon)
+            labels: labels, width: img.width, height: img.height, epsilon: config.epsilon)
 
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
         for face in faces {
             let rings = face.rings.filter { $0.count >= 3 }
             if rings.isEmpty { continue }
-            let color = q.palette[face.label]
+            let color = face.label < colors.count ? colors[face.label] : (0, 0, 0)
             doc.elements.append(.fill(FillShape(id: "fill-\(nextID)", color: color, rings: rings)))
             nextID += 1
         }

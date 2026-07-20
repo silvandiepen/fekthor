@@ -13,9 +13,13 @@ public enum Rasterizer {
             blue: CGFloat(rgb[2]) / 255, alpha: 1)
     }
 
-    public static func render(_ doc: VectorDocument) -> RasterImage {
-        let w = doc.width
-        let h = doc.height
+    /// Render the document. `scale` > 1 renders a crisper, higher-resolution
+    /// raster (for zoomable previews); geometry is resolution-independent.
+    public static func render(_ doc: VectorDocument, smoothing: Double = 1, scale: Double = 1)
+        -> RasterImage
+    {
+        let w = max(1, Int((Double(doc.width) * scale).rounded()))
+        let h = max(1, Int((Double(doc.height) * scale).rounded()))
         var data = [UInt8](repeating: 0, count: w * h * 4)
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         data.withUnsafeMutableBytes { buf in
@@ -28,16 +32,16 @@ public enum Rasterizer {
             // White base so uncovered pixels compare against a neutral background.
             ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
             ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-            // Flip to a top-left origin so points map directly.
+            // Flip to a top-left origin so points map directly, then apply scale.
             ctx.translateBy(x: 0, y: CGFloat(h))
-            ctx.scaleBy(x: 1, y: -1)
+            ctx.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
 
             for el in doc.elements {
                 switch el {
                 case .fill(let f):
                     let path = CGMutablePath()
                     for ring in f.rings where ring.count >= 3 {
-                        let (start, segs) = PathBuilder.closed(ring)
+                        let (start, segs) = PathBuilder.closed(ring, strength: smoothing)
                         path.move(to: CGPoint(x: start.x, y: start.y))
                         for s in segs {
                             path.addCurve(

@@ -7,16 +7,22 @@ public enum Fekthor {
         public var epsilon: Double
         public var minArea: Double
         public var threshold: UInt8
+        /// Region-merge strength for Shapes (0 = none, 1 = aggressive).
+        public var simplicity: Double
+        /// Curve smoothing strength (0 = polygonal, 1 = full).
+        public var smoothing: Double
         /// Overrides the estimated stroke width in Strokes mode (adjustable).
         public var strokeWidth: Double?
         public init(
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
-            strokeWidth: Double? = nil
+            simplicity: Double = 0.3, smoothing: Double = 1.0, strokeWidth: Double? = nil
         ) {
             self.colors = colors
             self.epsilon = epsilon
             self.minArea = minArea
             self.threshold = threshold
+            self.simplicity = simplicity
+            self.smoothing = smoothing
             self.strokeWidth = strokeWidth
         }
     }
@@ -49,7 +55,7 @@ public enum Fekthor {
                 img,
                 config: ShapesConfig(
                     colors: options.colors, iters: 8, epsilon: options.epsilon,
-                    minArea: options.minArea))
+                    simplicity: options.simplicity))
         case .strokes:
             doc = StrokesMode.run(
                 img,
@@ -62,8 +68,8 @@ public enum Fekthor {
                 config: GradientConfig(
                     colors: options.colors, epsilon: options.epsilon, minArea: options.minArea))
         }
-        let svg = SVGExport.toSVG(doc)
-        let rendered = Rasterizer.render(doc)
+        let svg = SVGExport.toSVG(doc, smoothing: options.smoothing)
+        let rendered = Rasterizer.render(doc, smoothing: options.smoothing)
         let metrics = Comparer.compare(img, rendered, tolerance: 8)
         return Result(document: doc, svg: svg, rendered: rendered, metrics: metrics)
     }
