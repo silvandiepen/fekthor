@@ -57,14 +57,11 @@ The initial product is a native macOS application built with SwiftUI. The vector
 
 ## Implementation tracking
 
-- [MVP master plan](../../issues/8)
-- [Phase 0 — Research foundation](../../issues/1)
-- [Phase 1 — Centreline stroke engine](../../issues/2)
-- [Phase 2 — Smart hybrid vectorisation](../../issues/3)
-- [Phase 3 — Native macOS workflow](../../issues/4)
-- [Phase 4 — Correction tools and exports](../../issues/5)
-- [Phase 5 — Public-release hardening](../../issues/6)
-- [Later — Optional on-device AI](../../issues/7)
+Implementation work is tracked on the shared Fekthor Kanban board in `project-assets`
+(`Tasks/Fekthor/`), which is the single source of truth for the phase-by-phase breakdown.
+The board decomposes `docs/ROADMAP.md` into claimable cards grouped by epic (foundation,
+centreline engine, geometry, hybrid classification, rendering/comparison, document model,
+native application, editing tools, release hardening and optional AI).
 
 ## Current status
 
