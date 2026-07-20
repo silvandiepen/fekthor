@@ -73,6 +73,32 @@ public struct RasterImage: Sendable {
         return (data[i], data[i + 1], data[i + 2], data[i + 3])
     }
 
+    /// Downscale so the longest side is at most `maxDimension` (area-averaged).
+    /// Returns self unchanged if already small enough. Vectorising a smaller
+    /// working image is far faster and avoids pixel-staircase node explosions.
+    public func scaled(maxDimension: Int) -> RasterImage {
+        let longest = max(width, height)
+        if longest <= maxDimension || longest == 0 { return self }
+        let scale = Double(maxDimension) / Double(longest)
+        let nw = max(1, Int((Double(width) * scale).rounded()))
+        let nh = max(1, Int((Double(height) * scale).rounded()))
+        guard let cg = cgImage() else { return self }
+        var out = [UInt8](repeating: 0, count: nw * nh * 4)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let ok = out.withUnsafeMutableBytes { buf -> Bool in
+            guard
+                let ctx = CGContext(
+                    data: buf.baseAddress, width: nw, height: nh, bitsPerComponent: 8,
+                    bytesPerRow: nw * 4, space: space,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            ctx.interpolationQuality = .high
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: nw, height: nh))
+            return true
+        }
+        return ok ? RasterImage(width: nw, height: nh, data: out) : self
+    }
+
     /// Build a CGImage from the buffer (for Vision / display).
     public func cgImage() -> CGImage? {
         let space = CGColorSpace(name: CGColorSpace.sRGB)!

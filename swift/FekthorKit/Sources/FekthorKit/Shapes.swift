@@ -9,7 +9,7 @@ public struct ShapesConfig {
     public var iters: Int
     public var epsilon: Double
     public var minArea: Double
-    public init(colors: Int = 16, iters: Int = 8, epsilon: Double = 1.0, minArea: Double = 6.0) {
+    public init(colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, minArea: Double = 6.0) {
         self.colors = colors
         self.iters = iters
         self.epsilon = epsilon
@@ -22,26 +22,17 @@ public enum ShapesMode {
         -> VectorDocument
     {
         let q = ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
-        var regs = ContourTracer.regions(q)
-        // Paint back-to-front: larger regions first, smaller layered on top.
-        regs.sort { a, b in
-            if a.area != b.area { return a.area > b.area }
-            return a.paletteIdx < b.paletteIdx
-        }
+        // Shared-edge planar map: adjacent regions use identical boundary points
+        // (no gaps), and each shared chain is simplified once (removes jitter).
+        let faces = PlanarMap.faces(
+            labels: q.indices, width: img.width, height: img.height, epsilon: config.epsilon)
 
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
-        for r in regs {
-            if r.area < config.minArea { continue }
-            let outer = Geometry.simplifyClosed(r.outer, epsilon: config.epsilon)
-            if outer.count < 3 { continue }
-            var rings = [outer]
-            for hole in r.holes {
-                if Geometry.area(hole) < config.minArea { continue }
-                let hs = Geometry.simplifyClosed(hole, epsilon: config.epsilon)
-                if hs.count >= 3 { rings.append(hs) }
-            }
-            let color = q.palette[r.paletteIdx]
+        for face in faces {
+            let rings = face.rings.filter { $0.count >= 3 }
+            if rings.isEmpty { continue }
+            let color = q.palette[face.label]
             doc.elements.append(.fill(FillShape(id: "fill-\(nextID)", color: color, rings: rings)))
             nextID += 1
         }
