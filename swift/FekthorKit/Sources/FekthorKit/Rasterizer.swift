@@ -43,9 +43,27 @@ public enum Rasterizer {
                         }
                         path.closeSubpath()
                     }
-                    ctx.addPath(path)
-                    ctx.setFillColor(cgColor(f.color))
-                    ctx.fillPath(using: .evenOdd)
+                    switch f.paint {
+                    case .solid(let rgb):
+                        ctx.addPath(path)
+                        ctx.setFillColor(cgColor(rgb))
+                        ctx.fillPath(using: .evenOdd)
+                    case .linear(let grad):
+                        ctx.saveGState()
+                        ctx.addPath(path)
+                        ctx.clip(using: .evenOdd)
+                        let colors = grad.stops.map { cgColor($0.color) } as CFArray
+                        let locations = grad.stops.map { CGFloat($0.offset) }
+                        if let g = CGGradient(
+                            colorsSpace: space, colors: colors, locations: locations)
+                        {
+                            ctx.drawLinearGradient(
+                                g, start: CGPoint(x: grad.p0.x, y: grad.p0.y),
+                                end: CGPoint(x: grad.p1.x, y: grad.p1.y),
+                                options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                        }
+                        ctx.restoreGState()
+                    }
                 case .stroke(let s):
                     guard s.points.count >= 2 else { continue }
                     let path = CGMutablePath()

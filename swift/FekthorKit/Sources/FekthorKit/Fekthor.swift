@@ -57,7 +57,10 @@ public enum Fekthor {
                     threshold: options.threshold, epsilon: max(1.0, options.epsilon),
                     widthOverride: options.strokeWidth))
         case .gradient:
-            throw EngineError.unsupported("mode not implemented yet: \(mode.rawValue)")
+            doc = GradientMode.run(
+                img,
+                config: GradientConfig(
+                    colors: options.colors, epsilon: options.epsilon, minArea: options.minArea))
         }
         let svg = SVGExport.toSVG(doc)
         let rendered = Rasterizer.render(doc)

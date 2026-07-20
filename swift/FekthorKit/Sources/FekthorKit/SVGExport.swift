@@ -27,16 +27,41 @@ public enum SVGExport {
     }
 
     public static func toSVG(_ doc: VectorDocument) -> String {
+        // Build gradient defs first, assigning each a stable id.
+        var defs = ""
+        var gradId: [Int: String] = [:]
+        var gi = 0
+        for (i, el) in doc.elements.enumerated() {
+            if case .fill(let f) = el, case .linear(let g) = f.paint {
+                let id = "grad-\(gi)"
+                gradId[i] = id
+                gi += 1
+                defs +=
+                    "    <linearGradient id=\"\(id)\" gradientUnits=\"userSpaceOnUse\" x1=\"\(num(g.p0.x))\" y1=\"\(num(g.p0.y))\" x2=\"\(num(g.p1.x))\" y2=\"\(num(g.p1.y))\">\n"
+                for stop in g.stops {
+                    defs +=
+                        "      <stop offset=\"\(num(stop.offset))\" stop-color=\"\(hex(stop.color))\"/>\n"
+                }
+                defs += "    </linearGradient>\n"
+            }
+        }
+
         var s = ""
         s +=
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(doc.width)\" height=\"\(doc.height)\" viewBox=\"0 0 \(doc.width) \(doc.height)\">\n"
-        for el in doc.elements {
+        if !defs.isEmpty { s += "  <defs>\n\(defs)  </defs>\n" }
+        for (i, el) in doc.elements.enumerated() {
             switch el {
             case .fill(let f):
                 var d = ""
                 for ring in f.rings where ring.count >= 3 { d += ringPath(ring) }
+                let fill: String
+                switch f.paint {
+                case .solid(let rgb): fill = hex(rgb)
+                case .linear: fill = "url(#\(gradId[i] ?? "grad-0"))"
+                }
                 s +=
-                    "  <path id=\"\(f.id)\" d=\"\(d)\" fill=\"\(hex(f.color))\" fill-rule=\"evenodd\"/>\n"
+                    "  <path id=\"\(f.id)\" d=\"\(d)\" fill=\"\(fill)\" fill-rule=\"evenodd\"/>\n"
             case .stroke(let st):
                 var d = ""
                 for (i, p) in st.points.enumerated() {

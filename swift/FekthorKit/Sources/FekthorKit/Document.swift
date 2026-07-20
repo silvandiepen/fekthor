@@ -10,16 +10,48 @@ public enum Mode: String, Codable, Sendable, CaseIterable {
     case gradient
 }
 
+/// A gradient stop: a colour at a normalised offset (0…1) along the axis.
+public struct GradientStop: Sendable {
+    public var color: [UInt8]
+    public var offset: Double
+    public init(color: RGB, offset: Double) {
+        self.color = [color.r, color.g, color.b]
+        self.offset = offset
+    }
+}
+
+/// A linear gradient in user-space (source-pixel) coordinates.
+public struct LinearGradient: Sendable {
+    public var p0: Pt
+    public var p1: Pt
+    public var stops: [GradientStop]
+    public init(p0: Pt, p1: Pt, stops: [GradientStop]) {
+        self.p0 = p0
+        self.p1 = p1
+        self.stops = stops
+    }
+}
+
+/// How a filled shape is painted.
+public enum Paint: Sendable {
+    case solid([UInt8])  // [r,g,b]
+    case linear(LinearGradient)
+}
+
 /// A filled region. `rings[0]` is the outer contour; the rest are holes.
 /// Rendered with the even-odd rule.
-public struct FillShape: Codable, Sendable {
+public struct FillShape: Sendable {
     public var id: String
-    public var color: [UInt8]  // [r,g,b]
+    public var paint: Paint
     public var rings: [[Pt]]
-    public init(id: String, color: RGB, rings: [[Pt]]) {
+    public init(id: String, paint: Paint, rings: [[Pt]]) {
         self.id = id
-        self.color = [color.r, color.g, color.b]
+        self.paint = paint
         self.rings = rings
+    }
+    /// Convenience: a solid-colour fill.
+    public init(id: String, color: RGB, rings: [[Pt]]) {
+        self.init(id: id, paint: .solid([color.r, color.g, color.b]), rings: rings)
     }
 }
 
