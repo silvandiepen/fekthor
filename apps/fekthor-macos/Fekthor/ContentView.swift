@@ -282,6 +282,12 @@ private struct InspectorView: View {
                     }
                 }
                 if model.mode == .strokes {
+                    Picker("Lines from", selection: $model.strokeSource) {
+                        Text("Auto").tag(StrokeSource.auto)
+                        Text("Centreline").tag(StrokeSource.centreline)
+                        Text("Region edges").tag(StrokeSource.edges)
+                    }
+                    .onChange(of: model.strokeSource) { _, _ in model.convert() }
                     Toggle("Auto line width", isOn: $model.strokeWidthAuto)
                         .onChange(of: model.strokeWidthAuto) { _, _ in model.convert() }
                     if !model.strokeWidthAuto {

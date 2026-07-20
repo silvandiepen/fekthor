@@ -17,6 +17,7 @@ final class ConversionModel: ObservableObject {
     @Published var smoothing: Double = 1.0
     @Published var strokeWidthAuto: Bool = true
     @Published var strokeWidth: Double = 4.0
+    @Published var strokeSource: StrokeSource = .auto
     /// Working resolution (longest side). Smaller = faster, coarser.
     @Published var resolution: Int = 1024
     @Published var status: String = "Drop, open or paste an image."
@@ -112,7 +113,8 @@ final class ConversionModel: ObservableObject {
         let smoothing = self.smoothing
         let options = Fekthor.Options(
             colors: Int(colors), epsilon: epsilon, simplicity: simplicity, smoothing: smoothing,
-            autoColors: autoColors, strokeWidth: strokeWidthAuto ? nil : strokeWidth)
+            autoColors: autoColors, strokeWidth: strokeWidthAuto ? nil : strokeWidth,
+            strokeSource: strokeSource)
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try Fekthor.convert(working, mode: mode, options: options)

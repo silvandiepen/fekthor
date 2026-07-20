@@ -15,10 +15,12 @@ public enum Fekthor {
         public var autoColors: Bool
         /// Overrides the estimated stroke width in Strokes mode (adjustable).
         public var strokeWidth: Double?
+        /// Where Strokes lines come from (auto / centreline / region edges).
+        public var strokeSource: StrokeSource
         public init(
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
             simplicity: Double = 0.3, smoothing: Double = 1.0, autoColors: Bool = true,
-            strokeWidth: Double? = nil
+            strokeWidth: Double? = nil, strokeSource: StrokeSource = .auto
         ) {
             self.colors = colors
             self.epsilon = epsilon
@@ -28,6 +30,7 @@ public enum Fekthor {
             self.smoothing = smoothing
             self.autoColors = autoColors
             self.strokeWidth = strokeWidth
+            self.strokeSource = strokeSource
         }
     }
 
@@ -65,7 +68,8 @@ public enum Fekthor {
                 img,
                 config: StrokesConfig(
                     threshold: options.threshold, epsilon: max(1.0, options.epsilon),
-                    widthOverride: options.strokeWidth))
+                    widthOverride: options.strokeWidth, source: options.strokeSource,
+                    colors: options.colors))
         case .gradient:
             doc = GradientMode.run(
                 img,
