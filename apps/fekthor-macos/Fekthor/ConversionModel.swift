@@ -13,8 +13,16 @@ final class ConversionModel: ObservableObject {
     @Published var colors: Double = 16
     @Published var epsilon: Double = 1.0
     @Published var status: String = "Open or drop an image to begin."
-    @Published var metrics: String = ""
     @Published var isBusy = false
+
+    // Structured result, shown in the inspector.
+    @Published var hasResult = false
+    @Published var exactPct: Double = 0
+    @Published var psnr: Double = 0
+    @Published var fills = 0
+    @Published var strokes = 0
+    @Published var nodes = 0
+    @Published var svgKB = 0
 
     private var sourcePath: String?
     private var svg: String = ""
@@ -59,16 +67,20 @@ final class ConversionModel: ObservableObject {
                 let nodes = result.document.nodeCount
                 let m = result.metrics
                 let svg = result.svg
+                let kb = svg.utf8.count / 1024
                 await MainActor.run {
                     guard gen == self.generation else { return }
                     if let cg {
                         self.vectorImage = NSImage(cgImage: cg, size: NSSize(width: w, height: h))
                     }
                     self.svg = svg
-                    let semantic = mode == .strokes ? "strokes \(strokes)" : "fills \(fills)"
-                    self.metrics = String(
-                        format: "exact %.1f%%  ·  PSNR %.1f dB  ·  %@  ·  nodes %d",
-                        m.exactPct, m.psnr, semantic, nodes)
+                    self.hasResult = true
+                    self.exactPct = m.exactPct
+                    self.psnr = m.psnr
+                    self.fills = fills
+                    self.strokes = strokes
+                    self.nodes = nodes
+                    self.svgKB = kb
                     self.status = "Converted · \(mode.rawValue)"
                     self.isBusy = false
                 }
@@ -76,7 +88,7 @@ final class ConversionModel: ObservableObject {
                 await MainActor.run {
                     guard gen == self.generation else { return }
                     self.vectorImage = nil
-                    self.metrics = ""
+                    self.hasResult = false
                     self.status = "\(error)"
                     self.isBusy = false
                 }
