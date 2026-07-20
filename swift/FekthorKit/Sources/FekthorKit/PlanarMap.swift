@@ -176,4 +176,92 @@ public enum PlanarMap {
         result.sort { maxArea($0.rings) > maxArea($1.rings) }
         return result
     }
+
+    /// Extract the interior boundary lines between regions (the "coloring plate"):
+    /// each boundary between two regions is traced once and shared, and the image
+    /// frame (region-vs-outside) is excluded. Used by Strokes on colour images.
+    public static func boundaryChains(labels: [Int], width w: Int, height h: Int, epsilon: Double)
+        -> [[Pt]]
+    {
+        let W = w + 1
+        @inline(__always) func lbl(_ x: Int, _ y: Int) -> Int {
+            (x < 0 || y < 0 || x >= w || y >= h) ? -1 : labels[y * w + x]
+        }
+        let dgx = [0, 1, 0, -1]
+        let dgy = [-1, 0, 1, 0]
+        // Interior boundary only: both separated pixels in-bounds and different.
+        @inline(__always) func edgeB(_ gx: Int, _ gy: Int, _ d: Int) -> Bool {
+            let ax: Int, ay: Int, bx: Int, by: Int
+            switch d {
+            case 0: (ax, ay, bx, by) = (gx - 1, gy - 1, gx, gy - 1)
+            case 1: (ax, ay, bx, by) = (gx, gy - 1, gx, gy)
+            case 2: (ax, ay, bx, by) = (gx - 1, gy, gx, gy)
+            default: (ax, ay, bx, by) = (gx - 1, gy - 1, gx - 1, gy)
+            }
+            let la = lbl(ax, ay)
+            let lb = lbl(bx, by)
+            return la != -1 && lb != -1 && la != lb
+        }
+        @inline(__always) func degreeB(_ gx: Int, _ gy: Int) -> Int {
+            var c = 0
+            for d in 0..<4 where edgeB(gx, gy, d) { c += 1 }
+            return c
+        }
+        @inline(__always) func key(_ gx: Int, _ gy: Int, _ d: Int) -> Int { (gy * W + gx) * 4 + d }
+        func toPt(_ gx: Int, _ gy: Int) -> Pt { Pt(Double(gx), Double(gy)) }
+
+        var visited = Set<Int>()
+        func walk(_ sx: Int, _ sy: Int, _ sd: Int) -> [Pt] {
+            var pts: [Pt] = [toPt(sx, sy)]
+            var cx = sx, cy = sy, cd = sd
+            while true {
+                let hid = key(cx, cy, cd)
+                if visited.contains(hid) { break }
+                let nx = cx + dgx[cd]
+                let ny = cy + dgy[cd]
+                visited.insert(hid)
+                visited.insert(key(nx, ny, (cd + 2) % 4))
+                pts.append(toPt(nx, ny))
+                if degreeB(nx, ny) != 2 { break }
+                let rev = (cd + 2) % 4
+                var nd = -1
+                for dd in 0..<4 where dd != rev && edgeB(nx, ny, dd) {
+                    nd = dd
+                    break
+                }
+                if nd == -1 { break }
+                cx = nx
+                cy = ny
+                cd = nd
+            }
+            return pts
+        }
+
+        var chains: [[Pt]] = []
+        // Chains anchored at junctions/ends first.
+        for gy in 0...h {
+            for gx in 0...w {
+                let deg = degreeB(gx, gy)
+                if deg == 2 || deg == 0 { continue }
+                for d in 0..<4 where edgeB(gx, gy, d) && !visited.contains(key(gx, gy, d)) {
+                    let pts = walk(gx, gy, d)
+                    if pts.count >= 2 {
+                        chains.append(Geometry.simplifyOpen(pts, epsilon: epsilon))
+                    }
+                }
+            }
+        }
+        // Remaining closed loops (no junction).
+        for gy in 0...h {
+            for gx in 0...w {
+                for d in 0..<4 where edgeB(gx, gy, d) && !visited.contains(key(gx, gy, d)) {
+                    let pts = walk(gx, gy, d)
+                    if pts.count >= 3 {
+                        chains.append(Geometry.simplifyClosed(pts, epsilon: epsilon))
+                    }
+                }
+            }
+        }
+        return chains
+    }
 }
