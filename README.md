@@ -31,9 +31,14 @@ Fekthor also supports ordinary filled-shape tracing and combines both approaches
 ## Core modes
 
 - **Smart** — classifies regions and produces a mixture of stroke paths and filled shapes.
-- **Strokes** — performs centreline extraction and emits stroked open or closed paths.
-- **Shapes** — performs conventional contour tracing and emits closed filled paths.
+- **Strokes** — performs centreline extraction and emits stroked open or closed paths (line art).
+- **Shapes** — performs conventional contour tracing and emits closed flat filled paths.
+- **Gradient** — traces colour regions and fits a smooth gradient per region, for shaded and 3D-style artwork.
 - **Clean redraw** — optional AI-assisted reinterpretation, clearly separated from faithful vectorisation.
+
+The Strokes, Shapes and Gradient modes are implemented in `swift/FekthorKit` and exposed by both the
+macOS app and the headless `fekthor` CLI (`fekthor process <image> --mode strokes|shapes|gradient`).
+Every conversion is scored against the source with a render-back comparison (exact-match %, PSNR).
 
 ## Initial platform and architecture
 
