@@ -55,9 +55,20 @@ The initial product is a native macOS application built with SwiftUI. The vector
 - [Architecture decisions](docs/DECISIONS.md)
 - [Agent implementation guide](AGENTS.md)
 
+## Implementation tracking
+
+- [MVP master plan](../../issues/8)
+- [Phase 0 — Research foundation](../../issues/1)
+- [Phase 1 — Centreline stroke engine](../../issues/2)
+- [Phase 2 — Smart hybrid vectorisation](../../issues/3)
+- [Phase 3 — Native macOS workflow](../../issues/4)
+- [Phase 4 — Correction tools and exports](../../issues/5)
+- [Phase 5 — Public-release hardening](../../issues/6)
+- [Later — Optional on-device AI](../../issues/7)
+
 ## Current status
 
-The repository currently contains the product and engineering plan. Implementation should start with the deterministic centreline-vectorisation research spike defined in the roadmap.
+The complete product and engineering plan is documented. Implementation should begin with the fixture-driven research foundation and deterministic centreline spike before substantial UI or AI work.
 
 ## Licensing
 
