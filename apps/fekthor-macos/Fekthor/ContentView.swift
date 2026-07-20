@@ -194,6 +194,15 @@ private struct InspectorView: View {
 
     var body: some View {
         Form {
+            if model.isBusy {
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Processing…").foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+            }
             Section("Vectorise") {
                 Picker("Mode", selection: $model.mode) {
                     Text("Shapes").tag(Mode.shapes)
