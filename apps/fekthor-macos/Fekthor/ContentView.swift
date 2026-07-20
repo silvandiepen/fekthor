@@ -68,9 +68,11 @@ struct ContentView: View {
             Spacer()
             if model.hasResult {
                 Text(
-                    String(
-                        format: "exact %.1f%%  ·  PSNR %.1f dB  ·  nodes %d",
-                        model.exactPct, model.psnr, model.nodes)
+                    model.mode == .strokes
+                        ? String(format: "strokes %d  ·  nodes %d", model.strokes, model.nodes)
+                        : String(
+                            format: "exact %.1f%%  ·  PSNR %.1f dB  ·  nodes %d",
+                            model.exactPct, model.psnr, model.nodes)
                 )
                 .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
             }
@@ -312,11 +314,13 @@ private struct InspectorView: View {
 
             if model.hasResult {
                 Section("Result") {
-                    LabeledContent("Exact match", value: String(format: "%.1f%%", model.exactPct))
-                    LabeledContent("PSNR", value: String(format: "%.1f dB", model.psnr))
+                    // Pixel-match metrics only apply to fill modes; Strokes output is
+                    // line art, so comparing it to a colour source is not meaningful.
                     if model.mode == .strokes {
                         LabeledContent("Strokes", value: "\(model.strokes)")
                     } else {
+                        LabeledContent("Exact match", value: String(format: "%.1f%%", model.exactPct))
+                        LabeledContent("PSNR", value: String(format: "%.1f dB", model.psnr))
                         LabeledContent("Fills", value: "\(model.fills)")
                     }
                     LabeledContent("Nodes", value: "\(model.nodes)")
