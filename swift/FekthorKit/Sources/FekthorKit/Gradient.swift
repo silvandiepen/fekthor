@@ -11,9 +11,11 @@ public struct GradientConfig {
     public var minArea: Double
     public var stops: Int
     public var autoColors: Bool
+    /// Region-merge strength (merges shaded bands of one object).
+    public var simplicity: Double
     public init(
         colors: Int = 20, iters: Int = 8, epsilon: Double = 1.0, minArea: Double = 12.0,
-        stops: Int = 6, autoColors: Bool = true
+        stops: Int = 6, autoColors: Bool = true, simplicity: Double = 0.15
     ) {
         self.colors = colors
         self.iters = iters
@@ -21,6 +23,7 @@ public struct GradientConfig {
         self.minArea = minArea
         self.stops = stops
         self.autoColors = autoColors
+        self.simplicity = simplicity
     }
 }
 
@@ -32,25 +35,41 @@ public enum GradientMode {
             config.autoColors
             ? ColorQuantizer.quantizeAuto(img, maxColors: max(2, config.colors), minFraction: 0.003)
             : ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
-        var regs = ContourTracer.regions(q)
-        regs.sort { a, b in
-            if a.area != b.area { return a.area > b.area }
-            return a.paletteIdx < b.paletteIdx
+
+        // Merge shaded bands / small regions, then trace via the shared-edge
+        // planar map (gap-free), and fit a gradient per face from source pixels.
+        let labels: [Int]
+        let colors: [RGB]
+        if config.simplicity > 0 {
+            let s = min(1.0, max(0.0, config.simplicity))
+            let minArea = Int(Double(img.width * img.height) * 0.0006 * s)
+            let colorThreshold = 40.0 * 40.0 * s
+            (labels, colors) = ComponentMerge.merge(
+                indices: q.indices, palette: q.palette, width: img.width, height: img.height,
+                minArea: minArea, colorThreshold: colorThreshold)
+        } else {
+            labels = q.indices
+            colors = q.palette
         }
+        let faces = PlanarMap.faces(
+            labels: labels, width: img.width, height: img.height, epsilon: config.epsilon)
 
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
-        for r in regs {
-            if r.area < config.minArea { continue }
-            let outer = Geometry.simplifyClosed(r.outer, epsilon: config.epsilon)
-            if outer.count < 3 { continue }
-            var rings = [outer]
-            for hole in r.holes {
-                if Geometry.area(hole) < config.minArea { continue }
-                let hs = Geometry.simplifyClosed(hole, epsilon: config.epsilon)
-                if hs.count >= 3 { rings.append(hs) }
+        for face in faces {
+            let rings = face.rings.filter { $0.count >= 3 }
+            if rings.isEmpty { continue }
+            var minx = Int.max, miny = Int.max, maxx = Int.min, maxy = Int.min
+            for ring in rings {
+                for p in ring {
+                    minx = min(minx, Int(p.x)); miny = min(miny, Int(p.y))
+                    maxx = max(maxx, Int(p.x)); maxy = max(maxy, Int(p.y))
+                }
             }
-            let paint = GradientFit.fit(img: img, q: q, region: r, stops: config.stops)
+            let fallback = face.label < colors.count ? colors[face.label] : (0, 0, 0)
+            let paint = GradientFit.fit(
+                img: img, labels: labels, label: face.label,
+                bbox: (minx, miny, maxx, maxy), fallback: fallback, stops: config.stops)
             doc.elements.append(.fill(FillShape(id: "fill-\(nextID)", paint: paint, rings: rings)))
             nextID += 1
         }

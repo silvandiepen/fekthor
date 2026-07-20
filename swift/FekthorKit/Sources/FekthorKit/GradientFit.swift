@@ -26,38 +26,31 @@ public enum GradientFit {
     }
 
     public static func fit(
-        img: RasterImage, q: Quantized, region: Region, stops stopCount: Int = 6
+        img: RasterImage, labels: [Int], label idx: Int, bbox: (Int, Int, Int, Int),
+        fallback: RGB, stops stopCount: Int = 6
     ) -> Paint {
         let w = img.width
         let h = img.height
-        let palette = q.palette[region.paletteIdx]
-        let solidFallback = Paint.solid([palette.r, palette.g, palette.b])
+        let solidFallback = Paint.solid([fallback.r, fallback.g, fallback.b])
 
-        var minx = Int.max, miny = Int.max, maxx = Int.min, maxy = Int.min
-        for p in region.outer {
-            minx = min(minx, Int(p.x))
-            miny = min(miny, Int(p.y))
-            maxx = max(maxx, Int(p.x))
-            maxy = max(maxy, Int(p.y))
-        }
+        var minx = bbox.0, miny = bbox.1, maxx = bbox.2, maxy = bbox.3
         minx = max(0, minx); miny = max(0, miny)
         maxx = min(w - 1, maxx); maxy = min(h - 1, maxy)
         if maxx < minx || maxy < miny { return solidFallback }
 
-        // Collect the region's source pixels (matched by palette index).
+        // Collect the region's source pixels (matched by label).
         var px: [Double] = []
         var py: [Double] = []
         var pr: [Double] = []
         var pg: [Double] = []
         var pb: [Double] = []
         var pl: [Double] = []
-        let idx = region.paletteIdx
         var y = miny
         while y <= maxy {
             var x = minx
             let row = y * w
             while x <= maxx {
-                if q.indices[row + x] == idx {
+                if labels[row + x] == idx {
                     let p = img.pixel(x, y)
                     let r = Double(p.0), g = Double(p.1), b = Double(p.2)
                     px.append(Double(x))
