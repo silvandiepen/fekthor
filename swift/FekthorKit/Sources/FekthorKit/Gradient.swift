@@ -36,21 +36,14 @@ public enum GradientMode {
             ? ColorQuantizer.quantizeAuto(img, maxColors: max(2, config.colors), minFraction: 0.003)
             : ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
 
-        // Merge shaded bands / small regions, then trace via the shared-edge
-        // planar map (gap-free), and fit a gradient per face from source pixels.
-        let labels: [Int]
-        let colors: [RGB]
-        if config.simplicity > 0 {
-            let s = min(1.0, max(0.0, config.simplicity))
-            let minArea = Int(Double(img.width * img.height) * 0.0006 * s)
-            let colorThreshold = 40.0 * 40.0 * s
-            (labels, colors) = ComponentMerge.merge(
-                indices: q.indices, palette: q.palette, width: img.width, height: img.height,
-                minArea: minArea, colorThreshold: colorThreshold)
-        } else {
-            labels = q.indices
-            colors = q.palette
-        }
+        // Always drop tiny speckle bands (area-only merge, no colour merge so the
+        // gradient bands survive), then trace via the shared-edge planar map
+        // (gap-free) and fit a gradient per face from source pixels.
+        let areaFraction = 0.0004 + 0.0012 * min(1.0, max(0.0, config.simplicity))
+        let minArea = Int(Double(img.width * img.height) * areaFraction)
+        let (labels, colors) = ComponentMerge.merge(
+            indices: q.indices, palette: q.palette, width: img.width, height: img.height,
+            minArea: minArea, colorThreshold: 0)
         let faces = PlanarMap.faces(
             labels: labels, width: img.width, height: img.height, epsilon: config.epsilon)
 
