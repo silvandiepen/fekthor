@@ -12,7 +12,7 @@ concurrency:
 jobs:
   engine:
     name: Engine (FekthorKit)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Swift version
@@ -24,9 +24,14 @@ jobs:
 
   app:
     name: macOS app
-    runs-on: macos-14
+    # Xcode 16+ is required: xcodegen emits the newer project format (objectVersion 77).
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Select latest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+      - name: Show Xcode version
+        run: xcodebuild -version
       - name: Install xcodegen
         run: brew install xcodegen
       - name: Generate project
