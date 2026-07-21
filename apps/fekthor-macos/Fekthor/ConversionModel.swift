@@ -16,6 +16,9 @@ final class ConversionModel: ObservableObject {
     @Published var detail: Double = 0.55
     @Published var simplicity: Double = 0.3
     @Published var smoothing: Double = 1.0
+    /// Geometry-refinement straighten strength (0…1): near-straight runs collapse
+    /// to single lines / axis-snapped primitives.
+    @Published var straighten: Double = 0.5
     @Published var strokeWidthAuto: Bool = true
     @Published var strokeWidth: Double = 4.0
     @Published var strokeSource: StrokeSource = .auto
@@ -118,8 +121,8 @@ final class ConversionModel: ObservableObject {
         let eps = 4.2 - 3.9 * detail
         let options = Fekthor.Options(
             colors: Int(colors), epsilon: eps, simplicity: simplicity, smoothing: smoothing,
-            autoColors: autoColors, strokeWidth: strokeWidthAuto ? nil : strokeWidth,
-            strokeSource: strokeSource)
+            straighten: straighten, autoColors: autoColors,
+            strokeWidth: strokeWidthAuto ? nil : strokeWidth, strokeSource: strokeSource)
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try Fekthor.convert(working, mode: mode, options: options)

@@ -301,6 +301,9 @@ private struct InspectorView: View {
                 slider("Smoothing", value: $model.smoothing, range: 0...1, step: 0.05) {
                     String(format: "%.0f%%", model.smoothing * 100)
                 }
+                slider("Straighten", value: $model.straighten, range: 0...1, step: 0.05) {
+                    String(format: "%.0f%%", model.straighten * 100)
+                }
             }
 
             if !model.sourceInfo.isEmpty {
