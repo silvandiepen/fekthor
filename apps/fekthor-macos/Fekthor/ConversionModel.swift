@@ -9,7 +9,8 @@ import UniformTypeIdentifiers
 final class ConversionModel: ObservableObject {
     @Published var sourceImage: NSImage?
     @Published var vectorImage: NSImage?
-    @Published var mode: Mode = .shapes
+    @Published var mode: Mode = .auto
+    @Published var resolvedMode: Mode = .shapes
     @Published var logoPreset: Bool = false
     @Published var autoColors: Bool = true
     @Published var autoColorMinFraction: Double = 0.004
@@ -54,12 +55,16 @@ final class ConversionModel: ObservableObject {
     @Published var svgKB = 0
     @Published var sourceInfo: String = ""
 
+    var controlsMode: Mode { mode == .auto ? resolvedMode : mode }
+
     /// The imported image, capped at 2048 so re-deriving working sizes is cheap.
     private var fullImage: RasterImage?
     private var originalLongest = 0
     private var workingImage: RasterImage?
     private var svg: String = ""
     private var generation = 0
+    private var cachedAutoGeneration: Int?
+    private var cachedAutoDetection: AutoMode.Detection?
 
     // MARK: Import
 
@@ -100,6 +105,9 @@ final class ConversionModel: ObservableObject {
         originalLongest = max(img.width, img.height)
         fullImage = img.scaled(maxDimension: 2048)
         imageGeneration += 1
+        cachedAutoGeneration = nil
+        cachedAutoDetection = nil
+        resolvedMode = .shapes
         deriveAndConvert(name: name)
     }
 
@@ -134,8 +142,12 @@ final class ConversionModel: ObservableObject {
         // Higher Detail → finer curves (smaller DP tolerance).
         let eps = 4.2 - 3.9 * detail
         let lineRGB: RGB? = lineColorEnabled ? Self.rgb(from: lineColor) : nil
-        // Flatten is a Shapes-only behaviour; never leak it into Strokes/Gradient.
-        let flattenValue = mode == .shapes ? flatten : 0
+        let detection = mode == .auto ? resolveAutoMode(for: working) : nil
+        let conversionMode = detection?.resolved ?? mode
+        if let detection { resolvedMode = detection.resolved } else { resolvedMode = mode }
+        // Flatten is a Shapes-only behaviour; never leak it into Strokes/Gradient or Auto
+        // resolutions that are not Shapes.
+        let flattenValue = conversionMode == .shapes ? flatten : 0
         let options = Fekthor.Options(
             colors: Int(colors), epsilon: eps, simplicity: simplicity, smoothing: smoothing,
             straighten: straighten, autoColors: autoColors,
@@ -145,7 +157,7 @@ final class ConversionModel: ObservableObject {
             strokeCap: strokeCap, taper: taper, lineColor: lineRGB)
         Task.detached(priority: .userInitiated) {
             do {
-                let result = try Fekthor.convert(working, mode: mode, options: options)
+                let result = try Fekthor.convert(working, mode: conversionMode, options: options)
                 // Render the preview crisply (~2048px) so zooming stays sharp.
                 let displayScale = max(
                     1.0, 2048.0 / Double(max(working.width, working.height)))
@@ -161,6 +173,7 @@ final class ConversionModel: ObservableObject {
                 let overall = result.quality.overall
                 let svg = result.svg
                 let kb = svg.utf8.count / 1024
+                let resolvedMode = result.resolvedMode
                 await MainActor.run {
                     guard gen == self.generation else { return }
                     if let cg {
@@ -175,7 +188,11 @@ final class ConversionModel: ObservableObject {
                     self.strokes = strokes
                     self.nodes = nodes
                     self.svgKB = kb
-                    self.status = "Converted · \(mode.rawValue)"
+                    self.resolvedMode = resolvedMode
+                    self.status =
+                        mode == .auto
+                        ? "Converted · auto→\(resolvedMode.rawValue)"
+                        : "Converted · \(mode.rawValue)"
                     self.isBusy = false
                 }
             } catch {
@@ -188,6 +205,16 @@ final class ConversionModel: ObservableObject {
                 }
             }
         }
+    }
+
+    private func resolveAutoMode(for image: RasterImage) -> AutoMode.Detection {
+        if cachedAutoGeneration == imageGeneration, let cachedAutoDetection {
+            return cachedAutoDetection
+        }
+        let detection = AutoMode.detect(image)
+        cachedAutoGeneration = imageGeneration
+        cachedAutoDetection = detection
+        return detection
     }
 
     // MARK: Export / drop

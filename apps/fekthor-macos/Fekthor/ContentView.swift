@@ -67,7 +67,7 @@ struct ContentView: View {
             Spacer()
             if model.hasResult {
                 Text(
-                    model.mode == .strokes
+                    model.controlsMode == .strokes
                         ? String(
                             format: "quality %.0f%%  ·  strokes %d  ·  nodes %d",
                             model.overallQuality * 100, model.strokes, model.nodes)
@@ -253,13 +253,18 @@ private struct InspectorView: View {
             }
             Section("Vectorise") {
                 Picker("Mode", selection: $model.mode) {
+                    Text("Auto").tag(Mode.auto)
                     Text("Shapes").tag(Mode.shapes)
                     Text("Strokes").tag(Mode.strokes)
                     Text("Gradient").tag(Mode.gradient)
                 }
                 .onChange(of: model.mode) { _, _ in model.convert() }
 
-                if model.mode == .shapes {
+                if model.mode == .auto {
+                    LabeledContent("Detected", value: model.resolvedMode.rawValue.capitalized)
+                }
+
+                if model.controlsMode == .shapes {
                     Toggle("Logo", isOn: $model.logoPreset)
                         .onChange(of: model.logoPreset) { _, enabled in
                             if enabled {
@@ -277,7 +282,7 @@ private struct InspectorView: View {
                 }
                 .onChange(of: model.resolution) { _, _ in model.resolutionChanged() }
 
-                if model.mode == .shapes || model.mode == .gradient {
+                if model.controlsMode == .shapes || model.controlsMode == .gradient {
                     Toggle("Auto colours", isOn: $model.autoColors)
                         .onChange(of: model.autoColors) { _, _ in model.convert() }
                     slider(
@@ -285,20 +290,20 @@ private struct InspectorView: View {
                         range: 2...32, step: 1
                     ) { "\(Int(model.colors))" }
                 }
-                if model.mode == .shapes || model.mode == .gradient {
+                if model.controlsMode == .shapes || model.controlsMode == .gradient {
                     slider(
-                        model.mode == .gradient ? "Blend" : "Simplicity",
+                        model.controlsMode == .gradient ? "Blend" : "Simplicity",
                         value: $model.simplicity, range: 0...1, step: 0.05
                     ) { String(format: "%.0f%%", model.simplicity * 100) }
                 }
-                if model.mode == .shapes {
+                if model.controlsMode == .shapes {
                     // Flatten: collapse shade families (a beard's blonds, a face's
                     // skins) into flat colours. 0% keeps today's output exactly.
                     slider("Flatten", value: $model.flatten, range: 0...1, step: 0.05) {
                         String(format: "%.0f%%", model.flatten * 100)
                     }
                 }
-                if model.mode == .strokes {
+                if model.controlsMode == .strokes {
                     Picker("Lines from", selection: $model.strokeSource) {
                         Text("Auto").tag(StrokeSource.auto)
                         Text("Centreline").tag(StrokeSource.centreline)
@@ -354,7 +359,7 @@ private struct InspectorView: View {
                         "Quality", value: String(format: "%.0f%%", model.overallQuality * 100))
                     // Pixel-match metrics only apply to fill modes; Strokes output is
                     // line art, so comparing it to a colour source is not meaningful.
-                    if model.mode == .strokes {
+                    if model.controlsMode == .strokes {
                         LabeledContent("Strokes", value: "\(model.strokes)")
                     } else {
                         LabeledContent("Exact match", value: String(format: "%.1f%%", model.exactPct))

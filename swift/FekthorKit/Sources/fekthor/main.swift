@@ -1,13 +1,26 @@
 import FekthorKit
 import Foundation
 
-// fekthor process <input> [--mode shapes] [--colors N] [--epsilon E]
+// fekthor process <input> [--mode auto] [--colors N] [--epsilon E]
 //                         [--min-area A] [--out DIR]
 // fekthor eval [--fixtures DIR] [--out DIR] [--json]
 
 func fail(_ msg: String) -> Never {
     FileHandle.standardError.write(Data((msg + "\n").utf8))
     exit(1)
+}
+
+func modeLabel(requested: Mode, resolved: Mode) -> String {
+    requested == .auto ? "auto→\(resolved.rawValue)" : requested.rawValue
+}
+
+func canonicalMode(for fixture: String) -> Mode? {
+    switch fixture {
+    case "artist-lineart": return .strokes
+    case "artist-flat", "thor-flat": return .shapes
+    case "artist-3d", "thor-3d": return .gradient
+    default: return nil
+    }
 }
 
 var args = Array(CommandLine.arguments.dropFirst())
@@ -22,7 +35,7 @@ case "eval":
 default:
     fail(
         "usage:\n"
-            + "  fekthor process <input> [--mode shapes|strokes|gradient] [--preset logo] [--colors N] [--epsilon E] [--flatten 0..1] [--min-area A] [--out DIR]\n"
+            + "  fekthor process <input> [--mode auto|shapes|strokes|gradient] [--preset logo] [--colors N] [--epsilon E] [--flatten 0..1] [--min-area A] [--out DIR]\n"
             + "  fekthor eval [--fixtures DIR] [--out DIR] [--json]")
 }
 
@@ -33,7 +46,7 @@ func runProcess(_ args: [String]) {
     guard !args.isEmpty else { fail("missing <input>") }
     let input = args.removeFirst()
 
-    var mode: Mode = .shapes
+    var mode: Mode = .auto
     var colors = 16
     var epsilon = 1.0
     var minArea = 6.0
@@ -104,6 +117,7 @@ func runProcess(_ args: [String]) {
         let report: [String: Any] = [
             "input": input,
             "mode": mode.rawValue,
+            "resolvedMode": result.resolvedMode.rawValue,
             "width": img.width, "height": img.height,
             "fills": result.document.fillCount,
             "strokes": result.document.strokeCount,
@@ -133,7 +147,8 @@ func runProcess(_ args: [String]) {
             String(
                 format:
                     "mode=%@ fills=%d nodes=%d svg=%dKB | overall=%.3f fidelity=%.3f exact=%.2f%% psnr=%.2fdB",
-                mode.rawValue, result.document.fillCount, result.document.nodeCount,
+                modeLabel(requested: mode, resolved: result.resolvedMode),
+                result.document.fillCount, result.document.nodeCount,
                 result.svg.utf8.count / 1024, q.overall, q.fidelity, m.exactPct, m.psnr))
     } catch {
         fail("error: \(error)")
@@ -168,7 +183,7 @@ func runEval(_ args: [String]) {
     }
     // Deterministic ordering: fixtures sorted by name, modes in a fixed order.
     let fixtures = entries.filter { $0.lowercased().hasSuffix(".png") }.sorted()
-    let modes: [Mode] = [.shapes, .strokes, .gradient]
+    let modes: [Mode] = [.auto, .shapes, .strokes, .gradient]
 
     // report.json rows exclude timestamps and timing so identical runs match byte
     // for byte (determinism gate). The printed table includes ms; JSON does not.
@@ -182,7 +197,7 @@ func runEval(_ args: [String]) {
         s.count >= n ? s : String(repeating: " ", count: n - s.count) + s
     }
     print(
-        padR("fixture", 18) + " " + padR("mode", 9) + " " + padL("overall", 8) + " "
+        padR("fixture", 18) + " " + padR("mode", 14) + " " + padL("overall", 8) + " "
             + padL("fidelity", 9) + " " + padL("simplicity", 11) + " " + padL("nodes", 6) + " "
             + padL("paths", 6) + " " + padL("ms", 6))
 
@@ -212,15 +227,16 @@ func runEval(_ args: [String]) {
             try? result.rendered.savePNG(path: runDir + "/render.png")
 
             print(
-                padR(name, 18) + " " + padR(mode.rawValue, 9) + " "
+                padR(name, 18) + " " + padR(modeLabel(requested: mode, resolved: result.resolvedMode), 14) + " "
                     + padL(String(format: "%.3f", q.overall), 8) + " "
                     + padL(String(format: "%.3f", q.fidelity), 9) + " "
                     + padL(String(format: "%.3f", q.simplicity), 11) + " "
                     + padL("\(nodes)", 6) + " " + padL("\(paths)", 6) + " " + padL("\(ms)", 6))
 
-            rows.append([
+            var row: [String: Any] = [
                 "fixture": name,
                 "mode": mode.rawValue,
+                "resolvedMode": result.resolvedMode.rawValue,
                 "overall": q.overall,
                 "fidelity": q.fidelity,
                 "simplicity": q.simplicity,
@@ -228,7 +244,12 @@ func runEval(_ args: [String]) {
                 "paths": paths,
                 "detail": q.detail.merging(result.detail) { current, _ in current },
                 "background": result.detail["backgroundTransparent"] == 1 ? "transparent" : "solid",
-            ])
+            ]
+            if mode == .auto, let expected = canonicalMode(for: name) {
+                row["expectedResolvedMode"] = expected.rawValue
+                row["resolvedModeOK"] = result.resolvedMode == expected
+            }
+            rows.append(row)
         }
     }
 
