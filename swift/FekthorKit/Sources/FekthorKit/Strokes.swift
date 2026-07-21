@@ -205,9 +205,11 @@ public enum StrokesMode {
                 labels: labels, width: w, height: h, epsilon: max(1.0, config.epsilon),
                 refine: fillRefineOpt)
             for face in faces where face.label != 0 {
+                // Blob eyes/dots are hand-drawn and irregular; a looser primitive
+                // tolerance lets them become clean circle/ellipse primitives.
                 guard let geometry = ShapeGeometryBuilder.build(
                     face: face, tolerance: max(1.0, config.epsilon), straighten: config.straighten,
-                    detectPrimitives: true)
+                    detectPrimitives: true, primitiveTolerance: max(1.0, config.epsilon) * 5)
                 else { continue }
                 doc.elements.append(
                     .fill(

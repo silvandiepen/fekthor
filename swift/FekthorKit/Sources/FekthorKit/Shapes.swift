@@ -84,12 +84,13 @@ public enum ShapesMode {
 /// substituting a whole-shape primitive when the face is a single ring.
 public enum ShapeGeometryBuilder {
     public static func build(
-        face: PlanarMap.Face, tolerance: Double, straighten: Double, detectPrimitives: Bool
+        face: PlanarMap.Face, tolerance: Double, straighten: Double, detectPrimitives: Bool,
+        primitiveTolerance: Double? = nil
     ) -> ShapeGeometry? {
         if let refined = face.refined, !refined.isEmpty {
             if detectPrimitives, refined.count == 1, let poly = face.rings.first,
                 let prim = PrimitiveDetect.detect(
-                    poly, tolerance: tolerance, straighten: straighten)
+                    poly, tolerance: primitiveTolerance ?? (tolerance * 1.6), straighten: straighten)
             {
                 return prim
             }

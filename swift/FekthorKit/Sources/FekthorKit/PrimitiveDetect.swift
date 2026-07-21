@@ -16,7 +16,7 @@ public enum PrimitiveDetect {
         -> ShapeGeometry?
     {
         let pts = PathRefine.dedupe(ring)
-        guard pts.count >= 8 else { return nil }
+        guard pts.count >= 6 else { return nil }
         if let c = detectCircle(pts, tolerance: tolerance) { return c }
         if let e = detectEllipse(pts, tolerance: tolerance) { return e }
         if let r = detectRect(pts, tolerance: tolerance, straighten: straighten) { return r }
@@ -43,7 +43,9 @@ public enum PrimitiveDetect {
             return nil
         }
         if r > 0.62 * max(bw, bh) || r < 0.35 * min(bw, bh) { return nil }
-        let tol = max(tolerance, 0.015 * r)
+        // The bbox gates above already block giant false positives, so the radial
+        // tolerance is the caller's (looser for hand-drawn blob fills).
+        let tol = max(tolerance, 0.02 * r)
         var maxDev = 0.0
         for p in pts { maxDev = max(maxDev, abs(PathRefine.dist(p, c) - r)) }
         return maxDev <= tol ? .circle(center: c, radius: r) : nil
@@ -119,7 +121,7 @@ public enum PrimitiveDetect {
         // A near-circular ellipse is better represented as a circle (handled
         // earlier); an extremely eccentric "ellipse" is usually a mis-fit.
         if max(rx, ry) / min(rx, ry) > 6 { return nil }
-        let tol = max(tolerance, 0.015 * max(rx, ry))
+        let tol = max(tolerance, 0.02 * max(rx, ry))
         var maxDev = 0.0
         for p in pts {
             let dx = p.x - cx
