@@ -503,6 +503,11 @@ private struct InspectorView: View {
                     .onChange(of: model.strokeCap) { _, _ in model.convert() }
                     Toggle("Taper ends", isOn: $model.taper)
                         .onChange(of: model.taper) { _, _ in model.convert() }
+                    Toggle("Variable width", isOn: $model.variableWidth)
+                        .onChange(of: model.variableWidth) { _, _ in model.convert() }
+                        .help(
+                            "Lines whose ink swells and thins become smooth outline fills that follow the drawn width, like Illustrator width profiles."
+                        )
                     Toggle("Line colour", isOn: $model.lineColorEnabled)
                         .onChange(of: model.lineColorEnabled) { _, _ in model.convert() }
                     if model.lineColorEnabled {

@@ -42,6 +42,9 @@ final class ConversionModel: ObservableObject {
     @Published var strokeCap: LineCap = .round
     /// Opt-in taper: narrowing tails render as outline fills (default off).
     @Published var taper: Bool = false
+    /// Opt-in variable width: swelling/thinning strokes become one smooth
+    /// outline fill (Illustrator width-profile semantics, default off).
+    @Published var variableWidth: Bool = false
     /// Line-colour override for strokes (both sources). Off = keep sampled/black.
     @Published var lineColorEnabled: Bool = false
     @Published var lineColor: Color = .black
@@ -207,7 +210,8 @@ final class ConversionModel: ObservableObject {
             flatten: flatten, partAware: partAware,
             strokeWidth: strokeWidthAuto ? nil : strokeWidth,
             uniformStrokeWidth: uniformStrokeWidth, strokeSource: strokeSource,
-            strokeCap: strokeCap, taper: taper, lineColor: lineRGB)
+            strokeCap: strokeCap, taper: taper, variableWidth: variableWidth,
+            lineColor: lineRGB)
         Task.detached(priority: .userInitiated) {
             let outcome = AutoTune.search(working, mode: mode, base: base)
             await MainActor.run {
@@ -256,7 +260,8 @@ final class ConversionModel: ObservableObject {
             partAware: conversionMode == .shapes && partAware,
             strokeWidth: strokeWidthAuto ? nil : strokeWidth,
             uniformStrokeWidth: uniformStrokeWidth, strokeSource: strokeSource,
-            strokeCap: strokeCap, taper: taper, lineColor: lineRGB)
+            strokeCap: strokeCap, taper: taper, variableWidth: variableWidth,
+            lineColor: lineRGB)
         let statusSuffix = logoAuto ? " · logo" : ""
         Task.detached(priority: .userInitiated) {
             do {

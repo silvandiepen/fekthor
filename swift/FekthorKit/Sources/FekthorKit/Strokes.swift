@@ -36,6 +36,9 @@ public struct StrokesConfig {
     /// Opt-in taper (default off): a monotonically-narrowing tail becomes an
     /// outline fill; the body stays a real stroke.
     public var taper: Bool
+    /// Opt-in variable-width envelopes (default off): strokes whose dt-width
+    /// profile genuinely varies are emitted as one smooth outline fill.
+    public var variableWidth: Bool
     /// Optional line-colour override for the coloring plate (region edges).
     public var lineColor: RGB?
     public init(
@@ -43,7 +46,7 @@ public struct StrokesConfig {
         widthOverride: Double? = nil, uniformWidth: Bool = false,
         source: StrokeSource = .auto, colors: Int = 12,
         smoothing: Double = 0.65, straighten: Double = 0.5, cap: LineCap = .round,
-        taper: Bool = false, lineColor: RGB? = nil
+        taper: Bool = false, variableWidth: Bool = false, lineColor: RGB? = nil
     ) {
         self.threshold = threshold
         self.epsilon = epsilon
@@ -56,6 +59,7 @@ public struct StrokesConfig {
         self.straighten = straighten
         self.cap = cap
         self.taper = taper
+        self.variableWidth = variableWidth
         self.lineColor = lineColor
     }
 }
@@ -450,6 +454,20 @@ public enum StrokesMode {
                 p.closed
                 ? Geometry.simplifyClosed(p.chain, epsilon: config.epsilon)
                 : Geometry.simplifyOpen(p.chain, epsilon: config.epsilon)
+            // Optional variable width: a stroke whose ink genuinely swells and
+            // thins becomes one smooth outline fill (Illustrator width-profile
+            // semantics). Checked before taper — the envelope subsumes tails.
+            if config.variableWidth && !p.closed,
+                let envelope = EnvelopeBuilder.build(
+                    chain: p.chain, dt: dt, w: w, h: h, options: refineOpt)
+            {
+                doc.elements.append(
+                    .fill(
+                        FillShape(
+                            id: "fill-\(nextID)", color: p.color, geometry: .refined([envelope]))))
+                nextID += 1
+                continue
+            }
             // Optional taper: a monotonically-narrowing tail becomes an outline fill
             // while the body stays a real stroke (default off — editability first).
             if config.taper && !p.closed,

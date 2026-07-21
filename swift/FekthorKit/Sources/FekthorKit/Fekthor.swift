@@ -36,6 +36,7 @@ public enum Fekthor {
         public var strokeCap: LineCap
         /// Opt-in taper: narrowing tails become outline fills (default off).
         public var taper: Bool
+        public var variableWidth: Bool
         /// Optional line-colour override for the coloring plate (region edges).
         public var lineColor: RGB?
         public init(
@@ -45,6 +46,7 @@ public enum Fekthor {
             partAware: Bool = false,
             strokeWidth: Double? = nil, uniformStrokeWidth: Bool = false,
             strokeSource: StrokeSource = .auto, strokeCap: LineCap = .round, taper: Bool = false,
+            variableWidth: Bool = false,
             lineColor: RGB? = nil
         ) {
             self.colors = colors
@@ -63,6 +65,7 @@ public enum Fekthor {
             self.strokeSource = strokeSource
             self.strokeCap = strokeCap
             self.taper = taper
+            self.variableWidth = variableWidth
             self.lineColor = lineColor
         }
     }
@@ -135,6 +138,7 @@ public enum Fekthor {
                     uniformWidth: options.uniformStrokeWidth, source: options.strokeSource,
                     colors: options.colors, smoothing: options.smoothing,
                     straighten: options.straighten, cap: options.strokeCap, taper: options.taper,
+                    variableWidth: options.variableWidth,
                     lineColor: options.lineColor))
         case .gradient:
             doc = GradientMode.run(
