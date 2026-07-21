@@ -136,3 +136,9 @@ lower palette index. (Plan 04's exact-colour rule then applies to that entry.)
   means) — document this asymmetry in code comments.
 - Do not let Flatten leak into Strokes/Gradient paths; it is a Shapes-mode option
   (`isLineArt` routing and gradient banding are unaffected).
+- **Orchestrator gate note (post-acceptance):** the dominant-shade pick is sensitive to
+  working resolution and Flatten strength — at 2048 px native with Flatten 0.7 the beard
+  family's dominant shade flips to a skin tone, while 1024 px (the app default) at 0.7,
+  or 2048 px at Flatten 0.4–0.6, keep it blond. Fine at the app's default pipeline;
+  a future robustness pass could pick the dominant shade in a resolution-independent way
+  (e.g. area fractions from the fine palette rather than bucket counts).
