@@ -95,11 +95,16 @@ inspector sidebar (controls + result metrics + processing loader), synchronized 
 comparison with click-drag and two-finger pan, pinch + button zoom (−/%/+/Fit), crisp
 high-resolution vector preview, and SVG export.
 
-## Quality (fixtures)
+## Quality (fixtures, 1024 working size, post plan 02)
 
-- Shapes (flat): ~96% exact / ~30dB, gap-free, ~1.4k nodes.
-- Strokes (line art): clean single lines, ~440 nodes.
-- Gradient (3D): ~30.7dB, gap-free.
+Geometry refinement cut node counts 50–60% while holding or lifting fidelity:
+
+- Shapes (artist-flat): overall 0.726 (was 0.679), ~500 nodes (was ~1.2k), gap-free, clean
+  lines/curves + `<rect>`s.
+- Strokes (artist-lineart): overall 0.845 (was 0.832), ~240 nodes; beret/head are single
+  smooth curves; blob eyes become `<ellipse>` primitives.
+- Gradient (artist-3d): overall 0.483 (≈ baseline 0.481) at ~2.5k nodes (was ~5.7k).
+- Preview == export verified against an independent SVG renderer (librsvg).
 
 ## Testing / CI
 

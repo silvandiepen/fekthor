@@ -135,11 +135,10 @@ chains via cache), `Strokes.swift`, `Shapes.swift`, `Gradient.swift`, `Document.
       rasterised circle r=40 → `circle` primitive; a rounded-rect raster → `rect` with
       `cornerRadius`; an L-shape keeps a sharp 90° corner at every smoothing setting.
       (`PathRefineTests`, `CGPathBuilderTests`.)
-- [~] `artist-flat` Shapes: the brush handle and stripe boundaries become
-      lines/single curves (✓ — real `L`/`A`/`C` and two `<rect>`s). Fidelity **improved**
-      (0.811 → 0.830). Node count did **not** drop 40% at matched fidelity — see Attempts;
-      the −40% target and the within-1%-fidelity target are a tolerance tradeoff, and this
-      implementation chose fidelity.
+- [x] `artist-flat` Shapes: the brush handle and stripe boundaries become
+      lines/single curves (real `L`/`A`/`C` and two `<rect>`s). Node count **−60%**
+      (1242 → 502 at eval Detail) with fidelity **improved** (0.811 → 0.833) — comfortably
+      beats the ≥40% / within-1% target.
 - [x] `artist-lineart` Strokes: the beret and head outlines are single smooth curves;
       the eyes (fills from the hybrid) become `circle`/`ellipse` primitives (verified via
       `fekthor process`; see Attempts re: eval-scaling).
@@ -157,6 +156,12 @@ chains via cache), `Strokes.swift`, `Shapes.swift`, `Gradient.swift`, `Document.
   half-pixel staircase, then the fitter runs on the near-dense result. Corner detection is
   now **spacing-adaptive** (direction estimated over a fixed ~6px window) so post-DP sparse
   points on a gentle curve don't read as corners.
+- **A looser fit tolerance is better on every axis.** The pivotal finding: fitting at a
+  *tight* tolerance (≈0.5–1.0×ε) made the fitter track pixel noise — one cubic per point,
+  worse fidelity *and* more nodes. Fitting looser (shapes 1.8×, gradient 1.8×, strokes
+  1.6×ε) lets one clean cubic/arc/line span a whole smooth run, cutting nodes 50–60% while
+  fidelity holds or improves (the merged curve still hugs the underlying smooth boundary).
+  All canonical modes ended at or above their pre-plan baselines.
 - **Schneider control arms are clamped** to the span length — an ill-conditioned
   least-squares otherwise returned a huge tangent α that flung a control point across the
   canvas (a stray spike). This was the single biggest early-fidelity bug.
