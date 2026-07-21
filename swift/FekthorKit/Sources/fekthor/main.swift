@@ -32,11 +32,22 @@ case "process":
 case "eval":
     args.removeFirst()
     runEval(args)
+case "detect":
+    args.removeFirst()
+    guard let path = args.first, let img = try? RasterImage.load(path: path) else {
+        fail("usage: fekthor detect <input>")
+    }
+    let d = AutoMode.detect(img)
+    print("resolved=\(d.resolved.rawValue) confidence=\(String(format: "%.2f", d.confidence))")
+    for (k, v) in d.features.sorted(by: { $0.key < $1.key }) {
+        print(String(format: "  %-16s %8.3f", (k as NSString).utf8String!, v))
+    }
 default:
     fail(
         "usage:\n"
             + "  fekthor process <input> [--mode auto|shapes|strokes|gradient] [--preset logo] [--colors N] [--epsilon E] [--flatten 0..1] [--min-area A] [--out DIR]\n"
-            + "  fekthor eval [--fixtures DIR] [--out DIR] [--json]")
+            + "  fekthor eval [--fixtures DIR] [--out DIR] [--json]\n"
+            + "  fekthor detect <input>")
 }
 
 // MARK: - process
