@@ -46,13 +46,26 @@ Conversion modes:
   parallel double-line suppression (grid-hash proximity). Options: Uniform width, Caps
   (round/butt/square), opt-in Taper (narrowing tails → outline fills), Line-colour override.
   Near-grey ink snaps to black.
-- **Gradient** — runs on the same gap-free planar map, fitting a multi-stop linear gradient per
-  face (least-squares luminance axis + binned mean colours), exported as SVG `<linearGradient>`.
-  3D fixture ≈ 30.7dB PSNR.
+- **Gradient** (plan 05) — **moment-based region merging** replaces the old colour-threshold
+  band merge. A fine (k=64) oversegmentation carries closed-form per-region moments
+  (`n, Σx…Σyy` and per-channel `ΣC…ΣCC`); the per-channel planar-fit SSE follows in O(1) and a
+  union's moments are element-wise sums, so greedy priority-queue agglomeration (`GradientRegions`)
+  evaluates every candidate merge without touching a pixel. Cost = excess plane-fit SSE per
+  smaller-region pixel; the Blend slider sets the merge threshold τ. Border-touching regions
+  are exempt from area absorption and get a 0.8× cost bias so the background coalesces into one
+  shape. Each final region is fit as the best of a **colour-aware linear** (axis = variance-
+  weighted mean of the three channel plane gradients), a **radial** (best of centroid / brightest-
+  10% / darkest-10% centres), or a **solid** fallback — exported as `<linearGradient>` /
+  `<radialGradient gradientUnits="userSpaceOnUse">` and rendered through the shared clip path
+  (rsvg matches the CoreGraphics preview pixel-for-pixel). 3D baselines: `thor-3d` overall
+  0.232→0.260, `artist-3d` ~0.495 (fidelity held). Note: the PSNR-weighted metric rewards
+  region *count*, so the "≤60 fills" minimal-shape target trades against the fidelity floor —
+  see plan 05 Attempts.
 
 Key modules: `ColorQuantizer` (fixed + auto/AA-excluding), `ComponentMerge`, `PlanarMap`
 (faces + shared boundary chains + shared-chain refinement), `Skeleton` / `SkeletonGraph`
-(trace + merge), `GradientFit`, `Geometry` (Douglas-Peucker + polyline smoothing),
+(trace + merge), `GradientRegions` (moment-based PQ agglomeration), `GradientFit`
+(linear / radial / solid selection), `Geometry` (Douglas-Peucker + polyline smoothing),
 `PathRefine` (typed segment fitting), `PrimitiveDetect` (circle/ellipse/rect), `CGPathBuilder`
 (shared CGPath source), `PathBuilder` (legacy Catmull-Rom fallback), `DistanceTransform`
 (exact Euclidean EDT, Felzenszwalb–Huttenlocher — stroke widths + spur pruning),
@@ -132,13 +145,18 @@ added stroke quality and logo handling without regressing canonical scores:
 - Strokes (artist-lineart): overall 0.845, fidelity 0.977 (was 0.976), 68 paths / ~240 nodes;
   per-stroke widths, endpoints reach the drawn tips, junctions gap-free, blob eyes stay filled
   primitives at both resamples. ~0.3s per conversion (budget 1.5s).
-- Gradient (artist-3d): overall 0.483 at ~2.5k nodes.
-- Preview == export verified against an independent SVG renderer (librsvg).
+- Gradient (artist-3d): overall 0.495, fidelity 0.606, ~2k nodes / 125 fills (plan 05).
+- Gradient (thor-3d): overall 0.260 (was 0.232), fidelity 0.347; radial fills + single-shape
+  background. ~0.4–0.7s per conversion (budget 1.5s).
+- Preview == export verified against an independent SVG renderer (librsvg / rsvg-convert),
+  including radial gradients.
 
 ## Testing / CI
 
-`swift test` (44 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
-gradient paint, round-trip fidelity, chamfer/distance-transform known masks, quality
+`swift test` (60 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
+gradient paint + radial round-trip, plan 05 (moment-merge 3-element scene, radial-beats-linear,
+background single-region, blend monotonicity, gradient determinism), round-trip fidelity,
+chamfer/distance-transform known masks, quality
 monotonicity, convert determinism, per-fixture eval regression floors, plus plan 02:
 line/arc/cubic fitting, corner preservation, smoothing=0 polygonal, reverse round-trip,
 arc-direction render, circle/ellipse/rounded-rect primitives, and shared-chain
@@ -148,10 +166,10 @@ logo fixtures and high-simplicity small-region preservation). GitHub Actions bui
 
 ## Next: quality plans
 
-The next quality leap is fully planned in [`docs/plans/`](plans/README.md) — six in-depth,
-self-contained plans (mode-aware metrics & eval harness, geometry refinement with
-straightening/arcs/primitives, Strokes, Shapes+logo, Gradient minimal-regions+radial,
-Auto mode), written for an implementer without prior context. Board cards
+The next quality leap is fully planned in [`docs/plans/`](plans/README.md) — self-contained
+plans written for an implementer without prior context. Plans 01–05 and 07 are implemented
+(mode-aware metrics & eval harness, geometry refinement, Strokes, Shapes+logo, Gradient
+minimal-regions+radial, Flatten); **plan 06 (Auto mode)** is next. Board cards
 FEKTHOR-088…093 track them.
 
 ## Known gaps / next
