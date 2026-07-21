@@ -17,6 +17,9 @@ final class ConversionModel: ObservableObject {
     /// 0 = coarse (fewer nodes), 1 = fine (more detail). Maps to DP tolerance.
     @Published var detail: Double = 0.55
     @Published var simplicity: Double = 0.3
+    /// Flatten strength (Shapes only): collapse shade families (same hue, different
+    /// lightness) into flat colours. 0 = off (identical to the non-flatten pipeline).
+    @Published var flatten: Double = 0
     @Published var smoothing: Double = 1.0
     /// Geometry-refinement straighten strength (0…1): near-straight runs collapse
     /// to single lines / axis-snapped primitives.
@@ -131,10 +134,12 @@ final class ConversionModel: ObservableObject {
         // Higher Detail → finer curves (smaller DP tolerance).
         let eps = 4.2 - 3.9 * detail
         let lineRGB: RGB? = lineColorEnabled ? Self.rgb(from: lineColor) : nil
+        // Flatten is a Shapes-only behaviour; never leak it into Strokes/Gradient.
+        let flattenValue = mode == .shapes ? flatten : 0
         let options = Fekthor.Options(
             colors: Int(colors), epsilon: eps, simplicity: simplicity, smoothing: smoothing,
             straighten: straighten, autoColors: autoColors,
-            autoColorMinFraction: autoColorMinFraction,
+            autoColorMinFraction: autoColorMinFraction, flatten: flattenValue,
             strokeWidth: strokeWidthAuto ? nil : strokeWidth,
             uniformStrokeWidth: uniformStrokeWidth, strokeSource: strokeSource,
             strokeCap: strokeCap, taper: taper, lineColor: lineRGB)

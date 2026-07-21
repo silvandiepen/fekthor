@@ -291,6 +291,13 @@ private struct InspectorView: View {
                         value: $model.simplicity, range: 0...1, step: 0.05
                     ) { String(format: "%.0f%%", model.simplicity * 100) }
                 }
+                if model.mode == .shapes {
+                    // Flatten: collapse shade families (a beard's blonds, a face's
+                    // skins) into flat colours. 0% keeps today's output exactly.
+                    slider("Flatten", value: $model.flatten, range: 0...1, step: 0.05) {
+                        String(format: "%.0f%%", model.flatten * 100)
+                    }
+                }
                 if model.mode == .strokes {
                     Picker("Lines from", selection: $model.strokeSource) {
                         Text("Auto").tag(StrokeSource.auto)
