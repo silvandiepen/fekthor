@@ -221,6 +221,31 @@ public enum PathRefine {
 
         let startAngle = atan2(a.y - cy, a.x - cx)
         let endAngle = atan2(b.y - cy, b.x - cx)
+        // Validate the other direction too: sample the ARC and require each
+        // sample near the polyline. Points-to-circle alone is fooled by
+        // degenerate fits — an ill-conditioned Kåsa solve on a near-straight
+        // span can return r == chord/2 (the anchors' diameter circle): every
+        // span point sits on it, yet the drawn arc bulges a full radius away
+        // (the "half-disc" artifact on straight cord edges).
+        func arcDeviatesFromSpan(
+            _ sa: Double, _ eaRaw: Double, clockwise: Bool, tol: Double
+        ) -> Bool {
+            var sweep = clockwise ? eaRaw - sa : sa - eaRaw
+            while sweep < 0 { sweep += 2 * .pi }
+            while sweep >= 2 * .pi { sweep -= 2 * .pi }
+            let steps = 8
+            for i in 1..<steps {
+                let ang = sa + (clockwise ? 1.0 : -1.0) * sweep * Double(i) / Double(steps)
+                let p = Pt(cx + r * cos(ang), cy + r * sin(ang))
+                var best = Double.greatestFiniteMagnitude
+                for j in 0..<(span.count - 1) {
+                    best = min(best, segDist(p, span[j], span[j + 1]))
+                    if best <= tol { break }
+                }
+                if best > tol { return true }
+            }
+            return false
+        }
         // Direction convention (used identically by flatten, CG and SVG): the arc
         // is traversed in the direction that reaches an interior sample within
         // less than a half-turn. In y-down space, increasing atan2 angle is
@@ -233,6 +258,12 @@ public enum PathRefine {
         let clockwise = inc < .pi
         let sweep = arcSweep(startAngle, endAngle, clockwise: clockwise)
         if sweep < 15 * .pi / 180 { return nil }
+        if arcDeviatesFromSpan(
+            startAngle, endAngle, clockwise: clockwise,
+            tol: max(curveTolerance(opt), 1.5))
+        {
+            return nil
+        }
         return .arc(
             center: Pt(cx, cy), radius: r, startAngle: startAngle, endAngle: endAngle,
             clockwise: clockwise)
@@ -641,6 +672,17 @@ public enum PathRefine {
         let len = (dx * dx + dy * dy).squareRoot()
         if len < 1e-9 { return dist(p, a) }
         return abs((p.x - a.x) * dy - (p.y - a.y) * dx) / len
+    }
+
+    /// Distance from `p` to the *segment* a–b (perpendicular foot clamped to
+    /// the endpoints — unlike `perpDist`, which measures to the infinite line).
+    static func segDist(_ p: Pt, _ a: Pt, _ b: Pt) -> Double {
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        if len2 < 1e-18 { return dist(p, a) }
+        let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+        return dist(p, Pt(a.x + t * dx, a.y + t * dy))
     }
 
     static func normalize(_ v: Pt) -> Pt {

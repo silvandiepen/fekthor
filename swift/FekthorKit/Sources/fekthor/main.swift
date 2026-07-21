@@ -69,6 +69,7 @@ func runProcess(_ args: [String]) {
     var flatten = 0.0
     var partAware = false
     var enhance = false
+    var scale = 1.0
     var out = "out"
 
     var i = 0
@@ -107,6 +108,7 @@ func runProcess(_ args: [String]) {
             default:
                 fail("bad --preset")
             }
+        case "--scale": i += 1; scale = Double(args[i]) ?? scale
         case "--out": i += 1; out = args[i]
         default: fail("unknown argument: \(args[i])")
         }
@@ -128,6 +130,10 @@ func runProcess(_ args: [String]) {
             atPath: out, withIntermediateDirectories: true)
         try result.svg.write(toFile: out + "/vector.svg", atomically: true, encoding: .utf8)
         try result.rendered.savePNG(path: out + "/render.png")
+        if scale != 1.0 {
+            let scaled = Rasterizer.render(result.document, smoothing: smoothing, scale: scale)
+            try scaled.savePNG(path: out + "/render-scaled.png")
+        }
 
         let q = result.quality
         let report: [String: Any] = [
