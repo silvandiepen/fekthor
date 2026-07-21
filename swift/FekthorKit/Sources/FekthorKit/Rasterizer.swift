@@ -69,7 +69,11 @@ public enum Rasterizer {
                     ctx.addPath(path)
                     ctx.setStrokeColor(cgColor(s.color))
                     ctx.setLineWidth(CGFloat(s.width))
-                    ctx.setLineCap(.round)
+                    switch s.cap {
+                    case .round: ctx.setLineCap(.round)
+                    case .butt: ctx.setLineCap(.butt)
+                    case .square: ctx.setLineCap(.square)
+                    }
                     ctx.setLineJoin(.round)
                     ctx.strokePath()
                 }

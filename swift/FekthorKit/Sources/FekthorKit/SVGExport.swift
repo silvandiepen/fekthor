@@ -148,7 +148,7 @@ public enum SVGExport {
                     d = dd
                 }
                 s +=
-                    "  <path id=\"\(st.id)\" d=\"\(d)\" fill=\"none\" stroke=\"\(hex(st.color))\" stroke-width=\"\(num(st.width))\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n"
+                    "  <path id=\"\(st.id)\" d=\"\(d)\" fill=\"none\" stroke=\"\(hex(st.color))\" stroke-width=\"\(num(st.width))\" stroke-linecap=\"\(st.cap.rawValue)\" stroke-linejoin=\"round\"/>\n"
             }
         }
         s += "</svg>\n"

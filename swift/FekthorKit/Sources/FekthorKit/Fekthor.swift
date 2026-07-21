@@ -18,12 +18,22 @@ public enum Fekthor {
         public var autoColors: Bool
         /// Overrides the estimated stroke width in Strokes mode (adjustable).
         public var strokeWidth: Double?
+        /// Uniform width: every stroke shares the median width (no manual override).
+        public var uniformStrokeWidth: Bool
         /// Where Strokes lines come from (auto / centreline / region edges).
         public var strokeSource: StrokeSource
+        /// Stroke end-cap style (round/butt/square).
+        public var strokeCap: LineCap
+        /// Opt-in taper: narrowing tails become outline fills (default off).
+        public var taper: Bool
+        /// Optional line-colour override for the coloring plate (region edges).
+        public var lineColor: RGB?
         public init(
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
             simplicity: Double = 0.3, smoothing: Double = 1.0, straighten: Double = 0.5,
-            autoColors: Bool = true, strokeWidth: Double? = nil, strokeSource: StrokeSource = .auto
+            autoColors: Bool = true, strokeWidth: Double? = nil, uniformStrokeWidth: Bool = false,
+            strokeSource: StrokeSource = .auto, strokeCap: LineCap = .round, taper: Bool = false,
+            lineColor: RGB? = nil
         ) {
             self.colors = colors
             self.epsilon = epsilon
@@ -34,7 +44,11 @@ public enum Fekthor {
             self.straighten = straighten
             self.autoColors = autoColors
             self.strokeWidth = strokeWidth
+            self.uniformStrokeWidth = uniformStrokeWidth
             self.strokeSource = strokeSource
+            self.strokeCap = strokeCap
+            self.taper = taper
+            self.lineColor = lineColor
         }
     }
 
@@ -75,9 +89,11 @@ public enum Fekthor {
                 img,
                 config: StrokesConfig(
                     threshold: options.threshold, epsilon: max(1.0, options.epsilon),
-                    widthOverride: options.strokeWidth, source: options.strokeSource,
+                    widthOverride: options.strokeWidth,
+                    uniformWidth: options.uniformStrokeWidth, source: options.strokeSource,
                     colors: options.colors, smoothing: options.smoothing,
-                    straighten: options.straighten))
+                    straighten: options.straighten, cap: options.strokeCap, taper: options.taper,
+                    lineColor: options.lineColor))
         case .gradient:
             doc = GradientMode.run(
                 img,

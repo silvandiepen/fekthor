@@ -149,25 +149,37 @@ extension ShapeGeometry {
     }
 }
 
-/// A stroked centreline path (constant width for the MVP; width is adjustable).
+/// How stroke ends are drawn (SVG `stroke-linecap`; CG line cap).
+public enum LineCap: String, Codable, Sendable, CaseIterable {
+    case round
+    case butt
+    case square
+}
+
+/// A stroked centreline path. Width is per-stroke (plan 03: estimated from the
+/// distance transform, or overridden/uniform); still a real stroke, never an
+/// outline (except opt-in taper tails, which are emitted as separate fills).
 public struct StrokePath: Sendable {
     public var id: String
     public var color: [UInt8]
     public var width: Double
     public var closed: Bool
     public var points: [Pt]
+    /// End-cap style (round/butt/square), shared across a conversion.
+    public var cap: LineCap
     /// Refined centreline geometry (plan 02). When present, export/render use it;
     /// `points` remains as a fallback and for line-mask fidelity scoring.
     public var refined: RefinedPath?
     public init(
         id: String, color: RGB, width: Double, closed: Bool, points: [Pt],
-        refined: RefinedPath? = nil
+        cap: LineCap = .round, refined: RefinedPath? = nil
     ) {
         self.id = id
         self.color = [color.r, color.g, color.b]
         self.width = width
         self.closed = closed
         self.points = points
+        self.cap = cap
         self.refined = refined
     }
 
