@@ -173,7 +173,14 @@ public enum PlanarMap {
 
         var result: [(label: Int, rings: [[Pt]])] = perLabel.map { ($0.key, $0.value) }
         func maxArea(_ rings: [[Pt]]) -> Double { rings.map { Geometry.area($0) }.max() ?? 0 }
-        result.sort { maxArea($0.rings) > maxArea($1.rings) }
+        // `perLabel` is a Dictionary (random iteration order per process); the sort
+        // needs a total order with a stable tie-breaker on label, or equal-area
+        // faces would order differently each run and break invariant #1.
+        result.sort {
+            let a = maxArea($0.rings), b = maxArea($1.rings)
+            if a != b { return a > b }
+            return $0.label < $1.label
+        }
         return result
     }
 

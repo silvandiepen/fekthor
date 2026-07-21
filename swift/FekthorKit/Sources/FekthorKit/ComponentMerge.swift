@@ -106,13 +106,17 @@ public enum ComponentMerge {
             sumB[ra] += sumB[rb]
             adj[ra].formUnion(adj[rb])
         }
-        func neighbors(_ r: Int) -> Set<Int> {
+        func neighbors(_ r: Int) -> [Int] {
             var out = Set<Int>()
             for nb in adj[r] {
                 let rn = find(nb)
                 if rn != r { out.insert(rn) }
             }
-            return out
+            // Sorted: `Set` iteration order is per-process randomised (Swift seeds
+            // its hasher per run), which would make the merge order — and thus the
+            // output geometry — non-deterministic across processes. Invariant #1
+            // (byte-identical output across runs) requires a stable order here.
+            return out.sorted()
         }
 
         // Pass 1: merge adjacent components with near-identical colour.
