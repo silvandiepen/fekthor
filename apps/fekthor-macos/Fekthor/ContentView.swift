@@ -132,21 +132,38 @@ private struct ComparisonView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            HSplitView {
-                pane(title: "Source", image: source, busy: false)
-                pane(title: "Vector", image: vector, busy: busy)
-            }
-            .overlay(
-                TrackpadCatcher(
-                    onPan: { dx, dy in
-                        offset = CGSize(width: offset.width + dx, height: offset.height + dy)
-                    },
-                    onZoom: { m in setZoom(zoom * (1 + m)) }
+        GeometryReader { geo in
+            ZStack(alignment: .bottom) {
+                HSplitView {
+                    pane(title: "Source", image: source, busy: false)
+                    pane(title: "Vector", image: vector, busy: busy)
+                }
+                .overlay(
+                    TrackpadCatcher(
+                        onPan: { dx, dy in
+                            offset = CGSize(width: offset.width + dx, height: offset.height + dy)
+                        },
+                        onZoom: { m in setZoom(zoom * (1 + m)) },
+                        onDoubleClick: { p in zoomIn(at: p, in: geo.size) }
+                    )
                 )
-            )
-            zoomControls
+                zoomControls
+            }
         }
+    }
+
+    /// Double-click: zoom in one step, anchored at the clicked point (mapped to
+    /// its pane — both panes share the transform, so they stay in lockstep).
+    private func zoomIn(at p: CGPoint, in size: CGSize) {
+        let paneW = size.width / 2
+        let localX = p.x >= paneW ? p.x - paneW : p.x
+        let click = CGSize(width: localX - paneW / 2, height: p.y - size.height / 2)
+        let newZoom = min(24, zoom * 1.6)
+        let k = newZoom / zoom
+        offset = CGSize(
+            width: click.width - (click.width - offset.width) * k,
+            height: click.height - (click.height - offset.height) * k)
+        zoom = newZoom
     }
 
     private var zoomControls: some View {
@@ -196,30 +213,40 @@ private struct ComparisonView: View {
 private struct TrackpadCatcher: NSViewRepresentable {
     let onPan: (CGFloat, CGFloat) -> Void
     let onZoom: (CGFloat) -> Void
+    var onDoubleClick: ((CGPoint) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSView {
         let v = CatcherView()
         v.onPan = onPan
         v.onZoom = onZoom
+        v.onDoubleClick = onDoubleClick
         return v
     }
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let v = nsView as? CatcherView else { return }
         v.onPan = onPan
         v.onZoom = onZoom
+        v.onDoubleClick = onDoubleClick
     }
 
     final class CatcherView: NSView {
         var onPan: ((CGFloat, CGFloat) -> Void)?
         var onZoom: ((CGFloat) -> Void)?
+        var onDoubleClick: ((CGPoint) -> Void)?
         override func scrollWheel(with event: NSEvent) {
             onPan?(event.scrollingDeltaX, event.scrollingDeltaY)
         }
         override func magnify(with event: NSEvent) {
             onZoom?(event.magnification)
         }
-        // Click-drag to pan.
-        override func mouseDown(with event: NSEvent) {}
+        // Click-drag to pan; double-click zooms in at the clicked point.
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 {
+                let p = convert(event.locationInWindow, from: nil)
+                // NSView is bottom-left origin; SwiftUI expects top-left (y down).
+                onDoubleClick?(CGPoint(x: p.x, y: bounds.height - p.y))
+            }
+        }
         override func mouseDragged(with event: NSEvent) {
             onPan?(event.deltaX, event.deltaY)
         }
