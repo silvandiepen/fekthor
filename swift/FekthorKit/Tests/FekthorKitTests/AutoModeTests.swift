@@ -29,6 +29,18 @@ final class AutoModeTests: XCTestCase {
         }
     }
 
+    func testFlatReferenceRoutesToShapes() throws {
+        // AI-generated flat art (rich palette, soft texture) must resolve to
+        // shapes, not gradient — guarded by the soft-flat Stage A gate.
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<5 { url.deleteLastPathComponent() }
+        let path = url.appendingPathComponent("fixtures/references/thor-3d-flattened.png").path
+        let img = try RasterImage.load(path: path)
+        let detection = AutoMode.detect(img.scaled(maxDimension: 1024))
+        XCTAssertEqual(detection.resolved, .shapes)
+        XCTAssertEqual(detection.features["stage"], 1)
+    }
+
     func testAmbiguousSyntheticFallsBackToStageB() throws {
         let img = ambiguousSynthetic()
         let detection = AutoMode.detect(img)
