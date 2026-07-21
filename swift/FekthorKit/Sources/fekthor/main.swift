@@ -138,12 +138,17 @@ func runEval(_ args: [String]) {
     // for byte (determinism gate). The printed table includes ms; JSON does not.
     var rows: [[String: Any]] = []
 
+    // `String(format:)` ignores field widths on `%@`, so pad columns by hand.
+    func padR(_ s: String, _ n: Int) -> String {
+        s.count >= n ? s : s + String(repeating: " ", count: n - s.count)
+    }
+    func padL(_ s: String, _ n: Int) -> String {
+        s.count >= n ? s : String(repeating: " ", count: n - s.count) + s
+    }
     print(
-        String(
-            format: "%-18@ %-9@ %8@ %9@ %11@ %6@ %6@ %6@",
-            "fixture" as NSString, "mode" as NSString, "overall" as NSString,
-            "fidelity" as NSString, "simplicity" as NSString, "nodes" as NSString,
-            "paths" as NSString, "ms" as NSString))
+        padR("fixture", 18) + " " + padR("mode", 9) + " " + padL("overall", 8) + " "
+            + padL("fidelity", 9) + " " + padL("simplicity", 11) + " " + padL("nodes", 6) + " "
+            + padL("paths", 6) + " " + padL("ms", 6))
 
     for fixture in fixtures {
         let name = (fixture as NSString).deletingPathExtension
@@ -171,10 +176,11 @@ func runEval(_ args: [String]) {
             try? result.rendered.savePNG(path: runDir + "/render.png")
 
             print(
-                String(
-                    format: "%-18@ %-9@ %8.3f %9.3f %11.3f %6d %6d %6d",
-                    name as NSString, mode.rawValue as NSString, q.overall, q.fidelity,
-                    q.simplicity, nodes, paths, ms))
+                padR(name, 18) + " " + padR(mode.rawValue, 9) + " "
+                    + padL(String(format: "%.3f", q.overall), 8) + " "
+                    + padL(String(format: "%.3f", q.fidelity), 9) + " "
+                    + padL(String(format: "%.3f", q.simplicity), 11) + " "
+                    + padL("\(nodes)", 6) + " " + padL("\(paths)", 6) + " " + padL("\(ms)", 6))
 
             rows.append([
                 "fixture": name,
