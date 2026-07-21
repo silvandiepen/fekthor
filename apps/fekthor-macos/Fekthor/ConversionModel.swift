@@ -27,6 +27,8 @@ final class ConversionModel: ObservableObject {
 
     // Structured result, shown in the inspector.
     @Published var hasResult = false
+    /// Mode-aware overall quality (0…1), honest and comparable across all modes.
+    @Published var overallQuality: Double = 0
     @Published var exactPct: Double = 0
     @Published var psnr: Double = 0
     @Published var fills = 0
@@ -133,6 +135,7 @@ final class ConversionModel: ObservableObject {
                 let strokes = result.document.strokeCount
                 let nodes = result.document.nodeCount
                 let m = result.metrics
+                let overall = result.quality.overall
                 let svg = result.svg
                 let kb = svg.utf8.count / 1024
                 await MainActor.run {
@@ -142,6 +145,7 @@ final class ConversionModel: ObservableObject {
                     }
                     self.svg = svg
                     self.hasResult = true
+                    self.overallQuality = overall
                     self.exactPct = m.exactPct
                     self.psnr = m.psnr
                     self.fills = fills

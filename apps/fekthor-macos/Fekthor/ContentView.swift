@@ -68,10 +68,12 @@ struct ContentView: View {
             if model.hasResult {
                 Text(
                     model.mode == .strokes
-                        ? String(format: "strokes %d  ·  nodes %d", model.strokes, model.nodes)
+                        ? String(
+                            format: "quality %.0f%%  ·  strokes %d  ·  nodes %d",
+                            model.overallQuality * 100, model.strokes, model.nodes)
                         : String(
-                            format: "exact %.1f%%  ·  PSNR %.1f dB  ·  nodes %d",
-                            model.exactPct, model.psnr, model.nodes)
+                            format: "quality %.0f%%  ·  exact %.1f%%  ·  PSNR %.1f dB  ·  nodes %d",
+                            model.overallQuality * 100, model.exactPct, model.psnr, model.nodes)
                 )
                 .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
             }
@@ -309,6 +311,9 @@ private struct InspectorView: View {
 
             if model.hasResult {
                 Section("Result") {
+                    // One honest, mode-aware score comparable across all modes.
+                    LabeledContent(
+                        "Quality", value: String(format: "%.0f%%", model.overallQuality * 100))
                     // Pixel-match metrics only apply to fill modes; Strokes output is
                     // line art, so comparing it to a colour source is not meaningful.
                     if model.mode == .strokes {
