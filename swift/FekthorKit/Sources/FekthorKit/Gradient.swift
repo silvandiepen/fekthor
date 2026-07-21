@@ -38,21 +38,22 @@ public struct GradientConfig {
 }
 
 public enum GradientMode {
-    public static func run(_ img: RasterImage, config: GradientConfig = GradientConfig())
-        -> VectorDocument
+    /// The moment-merged region segmentation for one image + config. Shared by
+    /// `run` and the plan-05 tests (background-single-region, blend monotonicity)
+    /// so those assertions exercise the real parameters, never a copy that drifts.
+    static func segment(_ img: RasterImage, config: GradientConfig)
+        -> (labels: [Int], colors: [RGB])
     {
         let q =
             config.autoColors
             ? ColorQuantizer.quantizeAuto(img, maxColors: max(2, config.colors), minFraction: 0.003)
             : ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
-
         // Merge adjacent bands of the same object (light→mid→shadow tones) into
         // one region so each becomes a single path filled with a gradient that
         // spans its full shading — fewer paths, richer gradients. Merging is driven
         // by real gradient-fit error (moment-based planar SSE), not raw colour
         // distance: a candidate pair merges only while the plane through the union
-        // still explains it. Then trace via the shared-edge planar map (gap-free)
-        // and fit a gradient per face.
+        // still explains it.
         let s = min(1.0, max(0.0, config.simplicity))
         // Blend τ: the per-(smaller-region)-pixel excess SSE tolerated when forcing
         // two regions onto one plane. Low Blend → tight (many regions); high →
@@ -61,9 +62,17 @@ public enum GradientMode {
         let tau = 150.0 + 1200.0 * s
         let areaFraction = 0.00004 + 0.0002 * s
         let minArea = max(8, Int(Double(img.width * img.height) * areaFraction))
-        let (labels, colors) = GradientRegions.segment(
+        return GradientRegions.segment(
             indices: q.indices, palette: q.palette, img: img, width: img.width, height: img.height,
             minArea: minArea, tau: tau)
+    }
+
+    public static func run(_ img: RasterImage, config: GradientConfig = GradientConfig())
+        -> VectorDocument
+    {
+        // Trace the merged regions via the shared-edge planar map (gap-free) and
+        // fit a gradient per face.
+        let (labels, colors) = segment(img, config: config)
         let refineOpt = RefineOptions(
             tolerance: config.epsilon * 1.8, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
