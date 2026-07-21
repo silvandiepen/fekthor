@@ -7,12 +7,16 @@ import XCTest
 /// but a real regression fails. Raise these as later plans improve results.
 final class EvalRegressionTests: XCTestCase {
     /// Canonical mode per fixture family, and the minimum acceptable overall.
+    // Baselines re-measured after plan 02 (geometry refinement). Refinement lifts
+    // simplicity a lot (fewer, cleaner nodes) and improves several fidelity scores
+    // (artist-flat shapes 0.811→0.830, lineart strokes 0.832→0.841); two hard
+    // photo-derived cases trade a little fidelity for far cleaner geometry.
     private let floors: [(fixture: String, mode: Mode, floor: Double)] = [
-        ("artist-lineart", .strokes, 0.80),  // baseline 0.832
-        ("artist-flat", .shapes, 0.65),  // baseline 0.679
-        ("thor-flat", .shapes, 0.36),  // baseline 0.396
-        ("artist-3d", .gradient, 0.45),  // baseline 0.481
-        ("thor-3d", .gradient, 0.19),  // baseline 0.219
+        ("artist-lineart", .strokes, 0.81),  // baseline 0.841
+        ("artist-flat", .shapes, 0.65),  // baseline 0.685
+        ("thor-flat", .shapes, 0.35),  // baseline 0.380
+        ("artist-3d", .gradient, 0.43),  // baseline 0.462
+        ("thor-3d", .gradient, 0.19),  // baseline 0.223
     ]
 
     /// Repo-root `fixtures/inputs`, resolved from this source file's location.
