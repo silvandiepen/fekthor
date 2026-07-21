@@ -74,11 +74,11 @@ public enum Fekthor {
             doc = GradientMode.run(
                 img,
                 config: GradientConfig(
-                    colors: max(24, options.colors), epsilon: max(3.0, options.epsilon),
+                    colors: 32, epsilon: max(3.0, options.epsilon),
                     minArea: options.minArea,
-                    // A smooth gradient has no high-frequency flat colours, so
-                    // auto-detection/merging would collapse it — use fixed bands.
-                    autoColors: false, simplicity: 0))
+                    // Fixed fine bands (a smooth gradient has no flat colours to
+                    // auto-detect), merged into rich gradient regions by Simplicity.
+                    autoColors: false, simplicity: max(0.25, options.simplicity)))
         }
         let svg = SVGExport.toSVG(doc, smoothing: options.smoothing)
         let rendered = Rasterizer.render(doc, smoothing: options.smoothing)

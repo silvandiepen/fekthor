@@ -272,10 +272,11 @@ private struct InspectorView: View {
                         range: 2...32, step: 1
                     ) { "\(Int(model.colors))" }
                 }
-                if model.mode == .shapes {
-                    slider("Simplicity", value: $model.simplicity, range: 0...1, step: 0.05) {
-                        String(format: "%.0f%%", model.simplicity * 100)
-                    }
+                if model.mode == .shapes || model.mode == .gradient {
+                    slider(
+                        model.mode == .gradient ? "Blend" : "Simplicity",
+                        value: $model.simplicity, range: 0...1, step: 0.05
+                    ) { String(format: "%.0f%%", model.simplicity * 100) }
                 }
                 if model.mode == .strokes {
                     Picker("Lines from", selection: $model.strokeSource) {

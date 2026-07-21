@@ -13,9 +13,12 @@ public struct GradientConfig {
     public var autoColors: Bool
     /// Region-merge strength (merges shaded bands of one object).
     public var simplicity: Double
+    /// Max colour distance for merging adjacent bands into one gradient region.
+    public var bandMerge: Double
     public init(
         colors: Int = 20, iters: Int = 8, epsilon: Double = 1.0, minArea: Double = 12.0,
-        stops: Int = 6, autoColors: Bool = true, simplicity: Double = 0.15
+        stops: Int = 6, autoColors: Bool = true, simplicity: Double = 0.15,
+        bandMerge: Double = 44
     ) {
         self.colors = colors
         self.iters = iters
@@ -24,6 +27,7 @@ public struct GradientConfig {
         self.stops = stops
         self.autoColors = autoColors
         self.simplicity = simplicity
+        self.bandMerge = bandMerge
     }
 }
 
@@ -36,14 +40,18 @@ public enum GradientMode {
             ? ColorQuantizer.quantizeAuto(img, maxColors: max(2, config.colors), minFraction: 0.003)
             : ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
 
-        // Always drop tiny speckle bands (area-only merge, no colour merge so the
-        // gradient bands survive), then trace via the shared-edge planar map
-        // (gap-free) and fit a gradient per face from source pixels.
-        let areaFraction = 0.0004 + 0.0012 * min(1.0, max(0.0, config.simplicity))
+        // Merge adjacent bands of the same object (light→mid→shadow tones) into
+        // one region so each becomes a single path filled with a gradient that
+        // spans its full shading — fewer paths, richer gradients. Then trace via
+        // the shared-edge planar map (gap-free) and fit a gradient per face.
+        let s = min(1.0, max(0.0, config.simplicity))
+        let areaFraction = 0.0004 + 0.0012 * s
         let minArea = Int(Double(img.width * img.height) * areaFraction)
+        // Higher simplicity → merge more distant bands → fewer, richer gradients.
+        let bandMerge = 26.0 + 60.0 * s
         let (labels, colors) = ComponentMerge.merge(
             indices: q.indices, palette: q.palette, width: img.width, height: img.height,
-            minArea: minArea, colorThreshold: 0)
+            minArea: minArea, colorThreshold: bandMerge * bandMerge)
         let faces = PlanarMap.faces(
             labels: labels, width: img.width, height: img.height, epsilon: config.epsilon)
 
