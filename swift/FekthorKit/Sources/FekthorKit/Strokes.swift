@@ -48,6 +48,14 @@ public enum StrokesMode {
         }
     }
 
+    /// Representative fill colour for a solid component (snaps grey → black).
+    static func fillColor(_ img: RasterImage, _ labels: [Int], _ label: Int, _ w: Int) -> RGB {
+        for p in 0..<labels.count where labels[p] == label {
+            return sampleColor(img, Pt(Double(p % w), Double(p / w)))
+        }
+        return (0, 0, 0)
+    }
+
     public static func run(_ img: RasterImage, config: StrokesConfig = StrokesConfig())
         -> VectorDocument
     {
@@ -109,22 +117,89 @@ public enum StrokesMode {
     }
 
     static func runCentreline(_ img: RasterImage, config: StrokesConfig) -> VectorDocument {
+        let w = img.width
+        let h = img.height
+        let n = w * h
         let mask = Foreground.dark(img, threshold: config.threshold)
         let fgCount = mask.count
-        let skel = Skeleton.thin(mask)
+        var skel = Skeleton.thin(mask)
         let skelCount = max(1, skel.count)
         // Area / skeleton-length approximates the mean constant stroke width.
         let width = config.widthOverride ?? max(1.0, Double(fgCount) / Double(skelCount))
-        // Trace skeleton edges, then merge them through junctions so a line
-        // passing straight through a crossing stays one continuous stroke.
+
+        var doc = VectorDocument(width: w, height: h)
+        var nextID = 0
+
+        // Hybrid: a solid blob (a dot/pupil) skeletonises to nothing, so classify
+        // foreground components and emit solid ones as filled shapes; thin lines
+        // stay as centreline strokes.
+        var comp = [Int](repeating: -1, count: n)
+        var compArea: [Int] = []
+        var compSkel: [Int] = []
+        let offs = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)]
+        var stack: [Int] = []
+        for start in 0..<n where mask.fg[start] && comp[start] < 0 {
+            let id = compArea.count
+            compArea.append(0)
+            compSkel.append(0)
+            comp[start] = id
+            stack.append(start)
+            while let p = stack.popLast() {
+                compArea[id] += 1
+                if skel.fg[p] { compSkel[id] += 1 }
+                let x = p % w
+                let y = p / w
+                for (dx, dy) in offs {
+                    let nx = x + dx
+                    let ny = y + dy
+                    if nx >= 0, ny >= 0, nx < w, ny < h {
+                        let q = ny * w + nx
+                        if mask.fg[q] && comp[q] < 0 {
+                            comp[q] = id
+                            stack.append(q)
+                        }
+                    }
+                }
+            }
+        }
+        var solidLabel = [Int](repeating: 0, count: compArea.count)
+        var solidCount = 0
+        for c in 0..<compArea.count {
+            let a = Double(compArea[c])
+            let s = Double(max(1, compSkel[c]))
+            // A stroke has area ~ skeletonLength*width; a solid blob has area >>.
+            if a > s * width * 2.6 && a > width * width * 2.5 {
+                solidCount += 1
+                solidLabel[c] = solidCount
+            }
+        }
+        if solidCount > 0 {
+            var labels = [Int](repeating: 0, count: n)
+            for p in 0..<n where mask.fg[p] {
+                let sl = solidLabel[comp[p]]
+                if sl > 0 {
+                    labels[p] = sl
+                    skel.fg[p] = false  // don't also trace it as a stroke
+                }
+            }
+            let faces = PlanarMap.faces(
+                labels: labels, width: w, height: h, epsilon: max(1.0, config.epsilon))
+            for face in faces where face.label != 0 {
+                let rings = face.rings.filter { $0.count >= 3 }
+                if rings.isEmpty { continue }
+                doc.elements.append(
+                    .fill(
+                        FillShape(
+                            id: "fill-\(nextID)", color: fillColor(img, labels, face.label, w),
+                            rings: rings)))
+                nextID += 1
+            }
+        }
+
+        // Trace the remaining thin skeleton into strokes; merge through junctions.
         let rawEdges = SkeletonGraph.edges(skel)
         let edges = SkeletonGraph.mergeByTangent(rawEdges)
-
-        // A short leftover chain after merging is a spur/noise branch.
         let spurLen = max(6.0, width * 2.0)
-
-        var doc = VectorDocument(width: img.width, height: img.height)
-        var nextID = 0
         for edge in edges {
             let first = edge.first!
             let last = edge.last!
