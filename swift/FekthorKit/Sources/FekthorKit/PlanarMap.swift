@@ -8,10 +8,26 @@ import Foundation
 /// therefore use identical boundary points — no gaps or overlaps — and the
 /// per-chain Douglas-Peucker removes staircase jitter (topology-aware, D-002/D-017).
 public enum PlanarMap {
-    /// Returns one entry per label with its even-odd fill rings, largest first.
+    /// One face: its even-odd polygonal rings, and — when refinement was
+    /// requested — the shared-chain refined ring paths (plan 02). Both faces of a
+    /// shared boundary reference the *same* cached refined chain (reversed for the
+    /// opposite traversal), so adjacent fills stay point-identical (invariant #2).
+    public typealias Face = (label: Int, rings: [[Pt]], refined: [RefinedPath]?)
+
+    /// Legacy convenience: rings only, no refinement.
     public static func faces(labels: [Int], width w: Int, height h: Int, epsilon: Double)
         -> [(label: Int, rings: [[Pt]])]
     {
+        faces(labels: labels, width: w, height: h, epsilon: epsilon, refine: nil)
+            .map { ($0.label, $0.rings) }
+    }
+
+    /// Returns one entry per label with its even-odd fill rings, largest first.
+    /// When `refine` is set, each shared boundary chain is refined once (cached by
+    /// canonical form) and the refined ring paths are returned alongside.
+    public static func faces(
+        labels: [Int], width w: Int, height h: Int, epsilon: Double, refine: RefineOptions?
+    ) -> [Face] {
         let W = w + 1
         @inline(__always) func lbl(_ x: Int, _ y: Int) -> Int {
             (x < 0 || y < 0 || x >= w || y >= h) ? -1 : labels[y * w + x]
@@ -89,7 +105,9 @@ public enum PlanarMap {
             }
         }
 
-        // Shared per-chain simplification cache.
+        // Shared per-chain cache. Keyed on the canonical (direction-independent)
+        // form so both faces of a boundary get the identical refined/simplified
+        // chain — the gap-freedom invariant (master plan §2).
         struct Key: Hashable {
             let a: Int
             let b: Int
@@ -98,8 +116,9 @@ public enum PlanarMap {
             let x: Int
         }
         var cache: [Key: [Pt]] = [:]
+        var refineCache: [Key: RefinedPath] = [:]
 
-        func simplifyOpenChain(_ chain: [Int]) -> [Pt] {
+        func openKey(_ chain: [Int]) -> Key {
             let a = chain.first!
             let b = chain.last!
             var s = 0
@@ -110,7 +129,13 @@ public enum PlanarMap {
                     x ^= gi
                 }
             }
-            let key = Key(a: min(a, b), b: max(a, b), n: chain.count, s: s, x: x)
+            return Key(a: min(a, b), b: max(a, b), n: chain.count, s: s, x: x)
+        }
+
+        func simplifyOpenChain(_ chain: [Int]) -> [Pt] {
+            let a = chain.first!
+            let b = chain.last!
+            let key = openKey(chain)
             if let c = cache[key] { return a <= b ? c : Array(c.reversed()) }
             let canonical = a <= b ? chain : chain.reversed()
             let simp = Geometry.simplifyOpen(canonical.map(toPt), epsilon: epsilon)
@@ -118,7 +143,22 @@ public enum PlanarMap {
             return a <= b ? simp : Array(simp.reversed())
         }
 
-        func simplifyClosedCycle(_ cyc: [Int]) -> [Pt] {
+        func refineOpenChain(_ chain: [Int], _ opt: RefineOptions) -> RefinedPath {
+            let a = chain.first!
+            let b = chain.last!
+            let key = openKey(chain)
+            if let c = refineCache[key] { return a <= b ? c : PathRefine.reverse(c) }
+            let canonical = a <= b ? chain : chain.reversed()
+            // Denoise only the pixel-staircase (half-pixel jitter) with a light DP,
+            // then fit typed segments to the near-dense result so curves hug the
+            // true boundary (not a lossy DP polyline) — high fidelity, few nodes.
+            let dense = Geometry.simplifyOpen(canonical.map(toPt), epsilon: 0.6)
+            let rp = PathRefine.refine(dense, closed: false, options: opt)
+            refineCache[key] = rp
+            return a <= b ? rp : PathRefine.reverse(rp)
+        }
+
+        func closedKey(_ cyc: [Int]) -> (Key, Int) {
             var s = 0
             var x = 0
             for gi in cyc {
@@ -126,7 +166,11 @@ public enum PlanarMap {
                 x ^= gi
             }
             let mn = cyc.min()!
-            let key = Key(a: mn, b: mn, n: cyc.count, s: s, x: x)
+            return (Key(a: mn, b: mn, n: cyc.count, s: s, x: x), mn)
+        }
+
+        func simplifyClosedCycle(_ cyc: [Int]) -> [Pt] {
+            let (key, mn) = closedKey(cyc)
             if let c = cache[key] { return c }
             let idx = cyc.firstIndex(of: mn)!
             let rotated = Array(cyc[idx...] + cyc[..<idx])
@@ -135,13 +179,67 @@ public enum PlanarMap {
             return simp
         }
 
-        // Assemble each loop into a ring using shared simplified chains.
+        func refineClosedCycle(_ cyc: [Int], _ opt: RefineOptions) -> RefinedPath {
+            let (key, mn) = closedKey(cyc)
+            if let c = refineCache[key] { return c }
+            let idx = cyc.firstIndex(of: mn)!
+            let rotated = Array(cyc[idx...] + cyc[..<idx])
+            let dense = Geometry.simplifyClosed(rotated.map(toPt), epsilon: 0.6)
+            let rp = PathRefine.refine(dense, closed: true, options: opt)
+            refineCache[key] = rp
+            return rp
+        }
+
+        // Assemble each loop into a ring using shared chains. When refining, the
+        // ring's polygon (`rings`) is the flattened refined path so area/bbox stay
+        // consistent with what is rendered.
         var perLabel: [Int: [[Pt]]] = [:]
+        var perLabelRefined: [Int: [RefinedPath]] = [:]
         for loop in loops {
             let pts = loop.pts
             let n = pts.count
-            var ring: [Pt] = []
             let nodePositions = pts.indices.filter { isNode(pts[$0]) }
+
+            if let opt = refine {
+                var ringPath: RefinedPath?
+                if nodePositions.isEmpty {
+                    ringPath = refineClosedCycle(pts, opt)
+                } else {
+                    let start = nodePositions.first!
+                    var chains: [[Int]] = []
+                    var cur = [pts[start]]
+                    var i = (start + 1) % n
+                    while true {
+                        cur.append(pts[i])
+                        if isNode(pts[i]) {
+                            chains.append(cur)
+                            cur = [pts[i]]
+                        }
+                        if i == start { break }
+                        i = (i + 1) % n
+                    }
+                    for ch in chains where ch.count >= 2 {
+                        let rp = refineOpenChain(ch, opt)
+                        if ringPath == nil {
+                            ringPath = rp
+                        } else {
+                            ringPath!.segments.append(contentsOf: rp.segments)
+                        }
+                    }
+                    ringPath?.closed = true
+                }
+                if let rp = ringPath, rp.segments.count >= 2 {
+                    let poly = PathRefine.flatten(rp)
+                    if poly.count >= 3 {
+                        perLabel[loop.label, default: []].append(poly)
+                        perLabelRefined[loop.label, default: []].append(rp)
+                    }
+                }
+                continue
+            }
+
+            // Legacy (no refinement): DP-simplified polygon rings only.
+            var ring: [Pt] = []
             if nodePositions.isEmpty {
                 ring = simplifyClosedCycle(pts)
             } else {
@@ -171,7 +269,7 @@ public enum PlanarMap {
             if ring.count >= 3 { perLabel[loop.label, default: []].append(ring) }
         }
 
-        var result: [(label: Int, rings: [[Pt]])] = perLabel.map { ($0.key, $0.value) }
+        var result: [Face] = perLabel.map { ($0.key, $0.value, perLabelRefined[$0.key]) }
         func maxArea(_ rings: [[Pt]]) -> Double { rings.map { Geometry.area($0) }.max() ?? 0 }
         // `perLabel` is a Dictionary (random iteration order per process); the sort
         // needs a total order with a stable tie-breaker on label, or equal-area

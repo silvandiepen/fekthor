@@ -30,10 +30,35 @@ public enum PrimitiveDetect {
         let c = Pt(fit.cx, fit.cy)
         let r = fit.r
         if r < 1 { return nil }
+        let bb = bbox(pts)
+        // Geometric sanity: a true circle has a roughly-square bbox, its centre
+        // inside that bbox, and radius ≈ half the bbox. This rejects giant-radius
+        // fits to gently-curved region boundaries (the far-off-canvas false
+        // positives that otherwise pass the relative tolerance).
+        let bw = bb.maxx - bb.minx
+        let bh = bb.maxy - bb.miny
+        if bw < 3 || bh < 3 { return nil }
+        if max(bw, bh) / min(bw, bh) > 1.35 { return nil }
+        if c.x < bb.minx - 2 || c.x > bb.maxx + 2 || c.y < bb.miny - 2 || c.y > bb.maxy + 2 {
+            return nil
+        }
+        if r > 0.62 * max(bw, bh) || r < 0.35 * min(bw, bh) { return nil }
         let tol = max(tolerance, 0.015 * r)
         var maxDev = 0.0
         for p in pts { maxDev = max(maxDev, abs(PathRefine.dist(p, c) - r)) }
         return maxDev <= tol ? .circle(center: c, radius: r) : nil
+    }
+
+    static func bbox(_ pts: [Pt]) -> (minx: Double, miny: Double, maxx: Double, maxy: Double) {
+        var minx = Double.infinity, miny = Double.infinity
+        var maxx = -Double.infinity, maxy = -Double.infinity
+        for p in pts {
+            minx = min(minx, p.x)
+            miny = min(miny, p.y)
+            maxx = max(maxx, p.x)
+            maxy = max(maxy, p.y)
+        }
+        return (minx, miny, maxx, maxy)
     }
 
     // MARK: - Ellipse (algebraic axis fit in the covariance frame)
@@ -82,6 +107,18 @@ public enum PrimitiveDetect {
         let rx = 1 / u.squareRoot()
         let ry = 1 / v.squareRoot()
         if rx < 1 || ry < 1 { return nil }
+        // Geometric sanity: centre inside the bbox and radii bounded by it, so a
+        // gently-curved boundary can't pass as a giant ellipse.
+        let bb = bbox(pts)
+        if cx < bb.minx - 2 || cx > bb.maxx + 2 || cy < bb.miny - 2 || cy > bb.maxy + 2 {
+            return nil
+        }
+        let diag = ((bb.maxx - bb.minx) * (bb.maxx - bb.minx)
+            + (bb.maxy - bb.miny) * (bb.maxy - bb.miny)).squareRoot()
+        if max(rx, ry) > 0.62 * diag { return nil }
+        // A near-circular ellipse is better represented as a circle (handled
+        // earlier); an extremely eccentric "ellipse" is usually a mis-fit.
+        if max(rx, ry) / min(rx, ry) > 6 { return nil }
         let tol = max(tolerance, 0.015 * max(rx, ry))
         var maxDev = 0.0
         for p in pts {

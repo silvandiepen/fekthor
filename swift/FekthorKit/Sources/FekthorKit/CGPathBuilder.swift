@@ -70,9 +70,12 @@ public enum CGPathBuilder {
             case .line(let to):
                 path.addLine(to: cg(to))
             case .arc(let c, let r, let sa, let ea, let cw):
+                // `cw` means increasing atan2 angle. The Rasterizer draws in a
+                // y-flipped context, where CG's `clockwise` is the *decreasing*
+                // angle direction — so the flag passed to CG is inverted.
                 path.addArc(
                     center: cg(c), radius: CGFloat(r), startAngle: CGFloat(sa),
-                    endAngle: CGFloat(ea), clockwise: cw)
+                    endAngle: CGFloat(ea), clockwise: !cw)
             case .cubic(let c1, let c2, let to):
                 path.addCurve(to: cg(to), control1: cg(c1), control2: cg(c2))
             }

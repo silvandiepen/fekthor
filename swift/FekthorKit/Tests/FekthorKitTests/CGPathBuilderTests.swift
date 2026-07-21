@@ -42,6 +42,26 @@ final class CGPathBuilderTests: XCTestCase {
         XCTAssertLessThan(diff, 80, "arc-built circle diverged from native circle (\(diff) px)")
     }
 
+    /// Discriminating arc-direction test: a 90° arc from (100,60) increasing-angle
+    /// (clockwise=true) bulges toward the bottom-right; the closed fill must cover
+    /// (85,85) and exclude (35,35). A full circle can't catch a flipped flag; this
+    /// minor arc can.
+    func testArcDirectionShortWay() {
+        let c = Pt(60, 60)
+        let r = 40.0
+        let start = Pt(100, 60)
+        let seg = RefinedSegment.arc(
+            center: c, radius: r, startAngle: 0, endAngle: .pi / 2, clockwise: true)
+        let rp = RefinedPath(start: start, segments: [seg, .line(to: c)], closed: true)
+        let doc = VectorDocument(
+            width: 120, height: 120,
+            elements: [.fill(FillShape(id: "a", color: (0, 0, 0), geometry: .refined([rp])))])
+        let img = Rasterizer.render(doc)
+        func dark(_ x: Int, _ y: Int) -> Bool { img.data[(y * 120 + x) * 4] < 128 }
+        XCTAssertTrue(dark(85, 85), "short-way arc bulge should be filled")
+        XCTAssertFalse(dark(35, 35), "opposite side should be empty")
+    }
+
     /// A rounded-rect raster is detected as a `rect` primitive with a corner radius.
     func testRoundedRectPrimitive() {
         // Sample a rounded rect boundary densely and detect it.

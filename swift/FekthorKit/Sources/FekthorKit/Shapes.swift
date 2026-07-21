@@ -12,15 +12,21 @@ public struct ShapesConfig {
     public var simplicity: Double
     /// Auto-detect dominant colours (excludes anti-aliasing) vs fixed k-means.
     public var autoColors: Bool
+    /// Curve smoothing strength for the refined cubics (0 polygonal … 1 full).
+    public var smoothing: Double
+    /// Straighten strength (0…1): greedier line fitting for near-straight runs.
+    public var straighten: Double
     public init(
         colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, simplicity: Double = 0.3,
-        autoColors: Bool = true
+        autoColors: Bool = true, smoothing: Double = 1.0, straighten: Double = 0.5
     ) {
         self.colors = colors
         self.iters = iters
         self.epsilon = epsilon
         self.simplicity = simplicity
         self.autoColors = autoColors
+        self.smoothing = smoothing
+        self.straighten = straighten
     }
 }
 
@@ -48,20 +54,49 @@ public enum ShapesMode {
             colors = q.palette
         }
 
-        // Shared-edge planar map: adjacent regions use identical boundary points
-        // (no gaps), and each shared chain is simplified once (removes jitter).
+        // Shared-edge planar map with geometry refinement: adjacent regions use
+        // identical refined boundary chains (no gaps), corners stay sharp, and
+        // near-straight runs / roundings become lines / arcs / cubics (plan 02).
+        let refineOpt = RefineOptions(
+            tolerance: config.epsilon, cornerAngle: 32, straighten: config.straighten,
+            smoothing: config.smoothing)
         let faces = PlanarMap.faces(
-            labels: labels, width: img.width, height: img.height, epsilon: config.epsilon)
+            labels: labels, width: img.width, height: img.height, epsilon: config.epsilon,
+            refine: refineOpt)
 
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
         for face in faces {
-            let rings = face.rings.filter { $0.count >= 3 }
-            if rings.isEmpty { continue }
             let color = face.label < colors.count ? colors[face.label] : (0, 0, 0)
-            doc.elements.append(.fill(FillShape(id: "fill-\(nextID)", color: color, rings: rings)))
+            guard let geometry = ShapeGeometryBuilder.build(
+                face: face, tolerance: config.epsilon, straighten: config.straighten,
+                detectPrimitives: true)
+            else { continue }
+            doc.elements.append(
+                .fill(FillShape(id: "fill-\(nextID)", color: color, geometry: geometry)))
             nextID += 1
         }
         return doc
+    }
+}
+
+/// Shared helper: turn a refined PlanarMap face into `ShapeGeometry`, optionally
+/// substituting a whole-shape primitive when the face is a single ring.
+public enum ShapeGeometryBuilder {
+    public static func build(
+        face: PlanarMap.Face, tolerance: Double, straighten: Double, detectPrimitives: Bool
+    ) -> ShapeGeometry? {
+        if let refined = face.refined, !refined.isEmpty {
+            if detectPrimitives, refined.count == 1, let poly = face.rings.first,
+                let prim = PrimitiveDetect.detect(
+                    poly, tolerance: tolerance, straighten: straighten)
+            {
+                return prim
+            }
+            return .refined(refined)
+        }
+        // Fallback: legacy polygonal rings.
+        let rings = face.rings.filter { $0.count >= 3 }
+        return rings.isEmpty ? nil : .rings(rings)
     }
 }

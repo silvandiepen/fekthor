@@ -15,10 +15,14 @@ public struct GradientConfig {
     public var simplicity: Double
     /// Max colour distance for merging adjacent bands into one gradient region.
     public var bandMerge: Double
+    /// Curve smoothing strength for the refined cubics (0 polygonal … 1 full).
+    public var smoothing: Double
+    /// Straighten strength (0…1): greedier line fitting for near-straight runs.
+    public var straighten: Double
     public init(
         colors: Int = 20, iters: Int = 8, epsilon: Double = 1.0, minArea: Double = 12.0,
         stops: Int = 6, autoColors: Bool = true, simplicity: Double = 0.15,
-        bandMerge: Double = 44
+        bandMerge: Double = 44, smoothing: Double = 1.0, straighten: Double = 0.5
     ) {
         self.colors = colors
         self.iters = iters
@@ -28,6 +32,8 @@ public struct GradientConfig {
         self.autoColors = autoColors
         self.simplicity = simplicity
         self.bandMerge = bandMerge
+        self.smoothing = smoothing
+        self.straighten = straighten
     }
 }
 
@@ -52,8 +58,12 @@ public enum GradientMode {
         let (labels, colors) = ComponentMerge.merge(
             indices: q.indices, palette: q.palette, width: img.width, height: img.height,
             minArea: minArea, colorThreshold: bandMerge * bandMerge)
+        let refineOpt = RefineOptions(
+            tolerance: config.epsilon, cornerAngle: 32, straighten: config.straighten,
+            smoothing: config.smoothing)
         let faces = PlanarMap.faces(
-            labels: labels, width: img.width, height: img.height, epsilon: config.epsilon)
+            labels: labels, width: img.width, height: img.height, epsilon: config.epsilon,
+            refine: refineOpt)
 
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
@@ -71,7 +81,13 @@ public enum GradientMode {
             let paint = GradientFit.fit(
                 img: img, labels: labels, label: face.label,
                 bbox: (minx, miny, maxx, maxy), fallback: fallback, stops: config.stops)
-            doc.elements.append(.fill(FillShape(id: "fill-\(nextID)", paint: paint, rings: rings)))
+            // Refined region boundaries; gradient regions are blobby, so no
+            // whole-shape primitive substitution here.
+            let geometry = ShapeGeometryBuilder.build(
+                face: face, tolerance: config.epsilon, straighten: config.straighten,
+                detectPrimitives: false) ?? .rings(rings)
+            doc.elements.append(
+                .fill(FillShape(id: "fill-\(nextID)", paint: paint, geometry: geometry)))
             nextID += 1
         }
         return doc

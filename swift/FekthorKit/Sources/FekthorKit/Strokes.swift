@@ -23,9 +23,14 @@ public struct StrokesConfig {
     public var widthOverride: Double?
     public var source: StrokeSource
     public var colors: Int
+    /// Curve smoothing strength for refined centrelines (0 polygonal … 1 full).
+    public var smoothing: Double
+    /// Straighten strength (0…1): greedier line fitting for near-straight runs.
+    public var straighten: Double
     public init(
         threshold: UInt8 = 128, epsilon: Double = 1.5, minLength: Int = 2,
-        widthOverride: Double? = nil, source: StrokeSource = .auto, colors: Int = 12
+        widthOverride: Double? = nil, source: StrokeSource = .auto, colors: Int = 12,
+        smoothing: Double = 1.0, straighten: Double = 0.5
     ) {
         self.threshold = threshold
         self.epsilon = epsilon
@@ -33,6 +38,8 @@ public struct StrokesConfig {
         self.widthOverride = widthOverride
         self.source = source
         self.colors = colors
+        self.smoothing = smoothing
+        self.straighten = straighten
     }
 }
 
@@ -85,6 +92,9 @@ public enum StrokesMode {
 
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
+        let refineOpt = RefineOptions(
+            tolerance: config.epsilon, cornerAngle: 32, straighten: config.straighten,
+            smoothing: config.smoothing)
         for chain in chains where chain.count >= 2 {
             let first = chain.first!
             let last = chain.last!
@@ -92,11 +102,12 @@ public enum StrokesMode {
                 chain.count > 3
                 && (pow(first.x - last.x, 2) + pow(first.y - last.y, 2)) < 4.0
             if !closed && Double(chain.count) < minLen { continue }
+            let refined = PathRefine.refine(chain, closed: closed, options: refineOpt)
             doc.elements.append(
                 .stroke(
                     StrokePath(
                         id: "stroke-\(nextID)", color: (0, 0, 0), width: width, closed: closed,
-                        points: chain)))
+                        points: chain, refined: refined)))
             nextID += 1
         }
         return doc
@@ -129,6 +140,12 @@ public enum StrokesMode {
 
         var doc = VectorDocument(width: w, height: h)
         var nextID = 0
+        let refineOpt = RefineOptions(
+            tolerance: config.epsilon, cornerAngle: 32, straighten: config.straighten,
+            smoothing: config.smoothing)
+        let fillRefineOpt = RefineOptions(
+            tolerance: max(1.0, config.epsilon), cornerAngle: 32, straighten: config.straighten,
+            smoothing: config.smoothing)
 
         // Hybrid: a solid blob (a dot/pupil) skeletonises to nothing, so classify
         // foreground components and emit solid ones as filled shapes; thin lines
@@ -182,16 +199,21 @@ public enum StrokesMode {
                     skel.fg[p] = false  // don't also trace it as a stroke
                 }
             }
+            // Solid blobs (dots, pupils) refine to typed rings; round ones become
+            // circle/ellipse primitives (plan 02 acceptance: line-art eyes).
             let faces = PlanarMap.faces(
-                labels: labels, width: w, height: h, epsilon: max(1.0, config.epsilon))
+                labels: labels, width: w, height: h, epsilon: max(1.0, config.epsilon),
+                refine: fillRefineOpt)
             for face in faces where face.label != 0 {
-                let rings = face.rings.filter { $0.count >= 3 }
-                if rings.isEmpty { continue }
+                guard let geometry = ShapeGeometryBuilder.build(
+                    face: face, tolerance: max(1.0, config.epsilon), straighten: config.straighten,
+                    detectPrimitives: true)
+                else { continue }
                 doc.elements.append(
                     .fill(
                         FillShape(
                             id: "fill-\(nextID)", color: fillColor(img, labels, face.label, w),
-                            rings: rings)))
+                            geometry: geometry)))
                 nextID += 1
             }
         }
@@ -208,7 +230,9 @@ public enum StrokesMode {
                 && (pow(first.x - last.x, 2) + pow(first.y - last.y, 2)) < 4.0
             if !closed && Double(edge.count) < spurLen { continue }
             if edge.count < 2 { continue }
-            // Smooth the raw centreline, then simplify, then render as a curve.
+            // Smooth the raw centreline, then refine the dense result directly into
+            // typed segments (plan 02) — no DP-then-Catmull-Rom. `points` keeps a
+            // simplified fallback; `refined` drives export/render.
             let smoothed =
                 closed ? edge : Geometry.smoothPolyline(edge, window: 2, iterations: 2)
             let simplified =
@@ -216,12 +240,13 @@ public enum StrokesMode {
                 ? Geometry.simplifyClosed(smoothed, epsilon: config.epsilon)
                 : Geometry.simplifyOpen(smoothed, epsilon: config.epsilon)
             if simplified.count < 2 { continue }
+            let refined = PathRefine.refine(smoothed, closed: closed, options: refineOpt)
             let color = sampleColor(img, edge[edge.count / 2])
             doc.elements.append(
                 .stroke(
                     StrokePath(
                         id: "stroke-\(nextID)", color: color, width: width, closed: closed,
-                        points: simplified)))
+                        points: simplified, refined: refined)))
             nextID += 1
         }
         return doc

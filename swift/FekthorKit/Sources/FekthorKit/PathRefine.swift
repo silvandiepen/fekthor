@@ -206,12 +206,18 @@ public enum PathRefine {
     /// and is a local maximum. Corners are kept ≥ k apart to avoid clusters.
     static func detectCorners(_ pts: [Pt], closed: Bool, _ opt: RefineOptions) -> [Int] {
         let n = pts.count
-        let k = min(8, max(3, n / 12))
+        // Estimate direction over a fixed ~6px arc-length window, so the turn
+        // measures true corner sharpness independent of point spacing. On sparse
+        // (post-DP) points k→1 (a gentle curve's per-vertex turn stays small); on
+        // dense points k grows to see through pixel jitter. This is what keeps
+        // organic curves from fragmenting into false corners.
+        let avgSpacing = max(0.5, polylineLength(pts) / Double(max(1, n - 1)))
+        let k = min(8, max(1, Int((6.0 / avgSpacing).rounded())))
         if n < 2 * k + 1 { return [] }
         let cornerRad = opt.cornerAngle * .pi / 180
         // Measure turn on lightly-smoothed positions so sub-pixel staircase jitter
         // does not read as a corner; real corners survive a small window.
-        let sm = smoothPositions(pts, closed: closed, window: min(2, k - 1))
+        let sm = smoothPositions(pts, closed: closed, window: min(2, max(1, k - 1)))
         var turn = [Double](repeating: 0, count: n)
         let lo = closed ? 0 : k
         let hi = closed ? n : n - k
@@ -286,8 +292,9 @@ public enum PathRefine {
             out.append(bezier)
             return
         }
-        // A couple of Newton reparameterisation rounds before giving up (≤2, per plan).
-        if maxError < tol * tol {
+        // A couple of Newton reparameterisation rounds before splitting, while the
+        // fit is still close (within a few × tol), per plan (≤2 rounds).
+        if maxError < tol * 8 {
             for _ in 0..<2 {
                 u = reparameterize(pts, bezier, u)
                 bezier = generateBezier(pts, u, leftT, rightT)
@@ -353,8 +360,12 @@ public enum PathRefine {
         }
         let segLen = dist(first, last)
         let epsilon = 1e-6 * segLen
-        if alphaL < epsilon || alphaR < epsilon {
-            // Fall back to Wu/Barsky heuristic (tangents scaled by 1/3 chord).
+        // A control arm can never legitimately exceed the span's own length; an
+        // ill-conditioned least-squares can otherwise return a huge alpha that
+        // flings the control point across the canvas (a stray spike). Clamp to the
+        // polyline length and fall back to the chord/3 heuristic if out of range.
+        let maxAlpha = max(segLen, polylineLength(pts))
+        if alphaL < epsilon || alphaR < epsilon || alphaL > maxAlpha || alphaR > maxAlpha {
             let d = segLen / 3
             alphaL = d
             alphaR = d

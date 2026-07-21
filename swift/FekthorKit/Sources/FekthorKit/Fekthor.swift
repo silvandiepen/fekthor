@@ -11,6 +11,9 @@ public enum Fekthor {
         public var simplicity: Double
         /// Curve smoothing strength (0 = polygonal, 1 = full).
         public var smoothing: Double
+        /// Geometry-refinement straighten strength (0…1): scales the line-fit
+        /// tolerance so near-straight runs collapse to single lines (plan 02).
+        public var straighten: Double
         /// Auto-detect dominant colours (excludes anti-aliasing) vs fixed count.
         public var autoColors: Bool
         /// Overrides the estimated stroke width in Strokes mode (adjustable).
@@ -19,8 +22,8 @@ public enum Fekthor {
         public var strokeSource: StrokeSource
         public init(
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
-            simplicity: Double = 0.3, smoothing: Double = 1.0, autoColors: Bool = true,
-            strokeWidth: Double? = nil, strokeSource: StrokeSource = .auto
+            simplicity: Double = 0.3, smoothing: Double = 1.0, straighten: Double = 0.5,
+            autoColors: Bool = true, strokeWidth: Double? = nil, strokeSource: StrokeSource = .auto
         ) {
             self.colors = colors
             self.epsilon = epsilon
@@ -28,6 +31,7 @@ public enum Fekthor {
             self.threshold = threshold
             self.simplicity = simplicity
             self.smoothing = smoothing
+            self.straighten = straighten
             self.autoColors = autoColors
             self.strokeWidth = strokeWidth
             self.strokeSource = strokeSource
@@ -64,14 +68,16 @@ public enum Fekthor {
                 img,
                 config: ShapesConfig(
                     colors: options.colors, iters: 8, epsilon: options.epsilon,
-                    simplicity: options.simplicity, autoColors: options.autoColors))
+                    simplicity: options.simplicity, autoColors: options.autoColors,
+                    smoothing: options.smoothing, straighten: options.straighten))
         case .strokes:
             doc = StrokesMode.run(
                 img,
                 config: StrokesConfig(
                     threshold: options.threshold, epsilon: max(1.0, options.epsilon),
                     widthOverride: options.strokeWidth, source: options.strokeSource,
-                    colors: options.colors))
+                    colors: options.colors, smoothing: options.smoothing,
+                    straighten: options.straighten))
         case .gradient:
             doc = GradientMode.run(
                 img,
@@ -80,7 +86,8 @@ public enum Fekthor {
                     minArea: options.minArea,
                     // Fixed fine bands (a smooth gradient has no flat colours to
                     // auto-detect), merged into rich gradient regions by Simplicity.
-                    autoColors: false, simplicity: max(0.25, options.simplicity)))
+                    autoColors: false, simplicity: max(0.25, options.simplicity),
+                    smoothing: options.smoothing, straighten: options.straighten))
         }
         let svg = SVGExport.toSVG(doc, smoothing: options.smoothing)
         let rendered = Rasterizer.render(doc, smoothing: options.smoothing)
