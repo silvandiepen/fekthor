@@ -405,6 +405,17 @@ private struct InspectorView: View {
                     LabeledContent("Detected", value: model.resolvedMode.rawValue.capitalized)
                 }
 
+                Button {
+                    model.autoTune()
+                } label: {
+                    Label("Auto-tune settings", systemImage: "wand.and.stars")
+                        .frame(maxWidth: .infinity)
+                }
+                .help(
+                    "Try Detail, Simplicity and Smoothing combinations on a thumbnail and move the sliders to the best-scoring one."
+                )
+                .disabled(model.isBusy)
+
                 if model.controlsMode == .shapes {
                     Toggle("Logo", isOn: $model.logoPreset)
                         .onChange(of: model.logoPreset) { _, enabled in

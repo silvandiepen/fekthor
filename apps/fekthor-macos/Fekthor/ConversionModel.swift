@@ -185,6 +185,44 @@ final class ConversionModel: ObservableObject {
         deriveAndConvert()
     }
 
+    // MARK: Auto-tune
+
+    /// Grid-search Detail/Simplicity/Smoothing on a thumbnail (engine-side
+    /// `AutoTune.search`, scored by Quality) and move the sliders to the
+    /// winner, then reconvert at full size.
+    func autoTune() {
+        guard let working = workingImage else { return }
+        generation += 1
+        let gen = generation
+        isBusy = true
+        status = "Auto-tuning…"
+        let mode = self.mode
+        let lineRGB: RGB? = lineColorEnabled ? Self.rgb(from: lineColor) : nil
+        // Current settings as the base; the searched axes are overwritten by
+        // every grid point anyway.
+        let base = Fekthor.Options(
+            colors: Int(colors), epsilon: 4.2 - 3.9 * detail,
+            simplicity: simplicity, smoothing: smoothing, straighten: straighten,
+            autoColors: autoColors, autoColorMinFraction: autoColorMinFraction,
+            flatten: flatten, partAware: partAware,
+            strokeWidth: strokeWidthAuto ? nil : strokeWidth,
+            uniformStrokeWidth: uniformStrokeWidth, strokeSource: strokeSource,
+            strokeCap: strokeCap, taper: taper, lineColor: lineRGB)
+        Task.detached(priority: .userInitiated) {
+            let outcome = AutoTune.search(working, mode: mode, base: base)
+            await MainActor.run {
+                guard gen == self.generation else { return }
+                self.simplicity = outcome.options.simplicity
+                self.smoothing = outcome.options.smoothing
+                self.detail = min(1, max(0, (4.2 - outcome.options.epsilon) / 3.9))
+                self.status = String(
+                    format: "Auto-tuned for this image (trial score %.0f%%)",
+                    outcome.score * 100)
+                self.convert()
+            }
+        }
+    }
+
     // MARK: Convert
 
     func convert() {
