@@ -101,29 +101,137 @@ public enum SkeletonGraph {
             return unit(e[last - k].x - e[last].x, e[last - k].y - e[last].y)
         }
 
-        var node: [Int: [(Int, Bool)]] = [:]
+        // A skeleton junction is usually a small CLUSTER of adjacent node
+        // pixels, so the four ends of an X-crossing land on different exact
+        // pixels. Exact-pixel grouping then hides the collinear continuation
+        // from `pick`, welding a line with its oblique crosser instead (the
+        // S-bend artifact). Union node keys within a 2px Chebyshev radius so
+        // every end at one visual junction competes in the same pool.
+        var rawNode: [Int: [(Int, Bool)]] = [:]
         for (i, e) in edges.enumerated() where e.count >= 2 {
-            node[nkey(e.first!), default: []].append((i, true))
-            node[nkey(e.last!), default: []].append((i, false))
+            rawNode[nkey(e.first!), default: []].append((i, true))
+            rawNode[nkey(e.last!), default: []].append((i, false))
         }
+        var parent: [Int: Int] = [:]
+        func findRoot(_ k: Int) -> Int {
+            var r = k
+            while let p = parent[r], p != r { r = p }
+            var c = k
+            while let p = parent[c], p != c {
+                parent[c] = r
+                c = p
+            }
+            return r
+        }
+        for k in rawNode.keys.sorted() { parent[k] = k }
+        for k in rawNode.keys.sorted() {
+            let ky = k / 100_000
+            let kx = k % 100_000
+            for dy in -1...1 {
+                for dx in -1...1 where dx != 0 || dy != 0 {
+                    let nk = (ky + dy) * 100_000 + (kx + dx)
+                    if parent[nk] != nil {
+                        let ra = findRoot(k)
+                        let rb = findRoot(nk)
+                        if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
+                    }
+                }
+            }
+        }
+        var node: [Int: [(Int, Bool)]] = [:]
+        for k in rawNode.keys.sorted() {
+            node[findRoot(k), default: []].append(contentsOf: rawNode[k]!)
+        }
+        let clusterOf: (Pt) -> Int = { p in findRoot(nkey(p)) }
         var used = [Bool](repeating: false, count: edges.count)
 
-        // Best straight continuation of travel direction `t` at node `nk`.
-        func pick(_ nk: Int, _ t: (Double, Double)) -> (Int, Bool)? {
+        // Signed curvature (mean turn per px) traversing an edge end away from
+        // the node. A curve crossed by its own tangent line has the same *angle*
+        // continuation both ways — only curvature continuity tells the curve's
+        // far side (keeps bending) from the straight line (κ ≈ 0).
+        func curvAway(_ e: [Pt], atStart: Bool) -> Double {
+            let k = min(e.count - 1, 8)
+            if k < 2 { return 0 }
+            var pts: [Pt] = []
+            pts.reserveCapacity(k + 1)
+            if atStart {
+                for i in 0...k { pts.append(e[i]) }
+            } else {
+                let last = e.count - 1
+                for i in 0...k { pts.append(e[last - i]) }
+            }
+            var turn = 0.0
+            var len = 0.0
+            for i in 1..<pts.count {
+                let dx = pts[i].x - pts[i - 1].x
+                let dy = pts[i].y - pts[i - 1].y
+                len += (dx * dx + dy * dy).squareRoot()
+                if i >= 2 {
+                    let px = pts[i - 1].x - pts[i - 2].x
+                    let py = pts[i - 1].y - pts[i - 2].y
+                    turn += atan2(px * dy - py * dx, px * dx + py * dy)
+                }
+            }
+            return len < 1e-9 ? 0 : turn / len
+        }
+        // Curvature-mismatch weight in dot-score units (κ in rad/px; a 0.03
+        // rad/px mismatch — a tight curve vs a straight — costs 0.24).
+        let curvWeight = 8.0
+
+        // Best continuation of travel direction `t` (curvature `kt`) at node
+        // `nk`, scored by tangent dot minus curvature mismatch. A weld is
+        // refused when some other free end at the node continues into the
+        // winner with a better score — greedy chain order must not let an
+        // oblique chain steal a collinear pair (stripes spliced into S-bends).
+        func pick(_ nk: Int, _ t: (Double, Double), _ kt: Double) -> (Int, Bool)? {
             guard let cands = node[nk] else { return nil }
             var best = -1
             var bestAtStart = true
-            var bestDot = minCos
+            var bestScore = -Double.infinity
+            var bestDot = 0.0
             for (ei, atStart) in cands where !used[ei] {
-                let a = awayDir(edges[ei], atStart: atStart)
+                // A short fragment whose other end is in the SAME cluster is
+                // junction debris; welding it turns the chain back into the
+                // cluster and chains of such debris render as scribble blobs.
+                // Only fragments that exit the cluster continue the stroke.
+                let e = edges[ei]
+                if e.count < 10 {
+                    let other = atStart ? e.last! : e.first!
+                    if findRoot(nkey(other)) == nk { continue }
+                }
+                let a = awayDir(e, atStart: atStart)
                 let d = t.0 * a.0 + t.1 * a.1
-                if d > bestDot {
+                if d <= minCos { continue }
+                // `kt` is the chain's curvature along its travel direction;
+                // the continuation, travelling on away from the node, keeps
+                // the same turn sign, so continuity is a direct difference.
+                let score = d - curvWeight * abs(kt - curvAway(e, atStart: atStart))
+                if score > bestScore {
+                    bestScore = score
                     bestDot = d
                     best = ei
                     bestAtStart = atStart
                 }
             }
-            return best >= 0 ? (best, bestAtStart) : nil
+            if best < 0 || bestDot <= minCos { return nil }
+            let bestAway = awayDir(edges[best], atStart: bestAtStart)
+            let bestCurv = curvAway(edges[best], atStart: bestAtStart)
+            // Only substantial rivals veto: a 2-3px junction fragment's
+            // direction is angle noise, not evidence of a straighter pair.
+            for (ri, rAtStart) in cands where !used[ri] && ri != best && edges[ri].count >= 5 {
+                let ra = awayDir(edges[ri], atStart: rAtStart)
+                // Rival travel direction into the node is -awayDir.
+                let rivalDot = -(ra.0 * bestAway.0 + ra.1 * bestAway.1)
+                let rivalScore =
+                    rivalDot - curvWeight * abs(curvAway(edges[ri], atStart: rAtStart) + bestCurv)
+                if rivalScore > bestScore + 1e-9 { return nil }
+            }
+            return (best, bestAtStart)
+        }
+
+        // Chain-end curvature travelling toward the given end.
+        func chainCurv(_ chain: [Pt], towardEnd: Bool) -> Double {
+            -curvAway(chain, atStart: !towardEnd)
         }
 
         var result: [[Pt]] = []
@@ -135,7 +243,8 @@ public enum SkeletonGraph {
                 let k = min(chain.count - 1, 4)
                 let last = chain.count - 1
                 let t = unit(chain[last].x - chain[last - k].x, chain[last].y - chain[last - k].y)
-                guard let (ei, atStart) = pick(nkey(chain[last]), t) else { break }
+                let kt = chainCurv(chain, towardEnd: true)
+                guard let (ei, atStart) = pick(clusterOf(chain[last]), t, kt) else { break }
                 used[ei] = true
                 let e = edges[ei]
                 chain.append(contentsOf: atStart ? Array(e.dropFirst()) : Array(e.reversed().dropFirst()))
@@ -144,7 +253,8 @@ public enum SkeletonGraph {
             while chain.count >= 2 {
                 let k = min(chain.count - 1, 4)
                 let t = unit(chain[0].x - chain[k].x, chain[0].y - chain[k].y)
-                guard let (ei, atStart) = pick(nkey(chain[0]), t) else { break }
+                let kt = chainCurv(chain, towardEnd: false)
+                guard let (ei, atStart) = pick(clusterOf(chain[0]), t, kt) else { break }
                 used[ei] = true
                 let e = edges[ei]
                 let piece = atStart ? Array(e.dropFirst()) : Array(e.reversed().dropFirst())
