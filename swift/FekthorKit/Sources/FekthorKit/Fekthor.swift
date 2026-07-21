@@ -74,7 +74,7 @@ public enum Fekthor {
             doc = GradientMode.run(
                 img,
                 config: GradientConfig(
-                    colors: 32, epsilon: max(3.0, options.epsilon),
+                    colors: 32, epsilon: max(1.0, options.epsilon),
                     minArea: options.minArea,
                     // Fixed fine bands (a smooth gradient has no flat colours to
                     // auto-detect), merged into rich gradient regions by Simplicity.

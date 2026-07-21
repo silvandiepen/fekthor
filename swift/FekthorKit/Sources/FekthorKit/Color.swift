@@ -19,6 +19,27 @@ public enum ColorQuantizer {
         return dr * dr + dg * dg + db * db
     }
 
+    /// True if `c` lies on the blend line between two palette colours — i.e. it
+    /// is an anti-aliasing colour, not a distinct feature colour.
+    static func isBlend(_ c: RGB, _ palette: [RGB]) -> Bool {
+        let cx = Double(c.r), cy = Double(c.g), cz = Double(c.b)
+        for i in 0..<palette.count {
+            for j in (i + 1)..<palette.count {
+                let a = palette[i], b = palette[j]
+                let ax = Double(a.r), ay = Double(a.g), az = Double(a.b)
+                let abx = Double(b.r) - ax, aby = Double(b.g) - ay, abz = Double(b.b) - az
+                let denom = abx * abx + aby * aby + abz * abz
+                if denom < 1 { continue }
+                let t = ((cx - ax) * abx + (cy - ay) * aby + (cz - az) * abz) / denom
+                if t <= 0.12 || t >= 0.88 { continue }  // near an endpoint, not a blend
+                let px = ax + t * abx, py = ay + t * aby, pz = az + t * abz
+                let d2 = (cx - px) * (cx - px) + (cy - py) * (cy - py) + (cz - pz) * (cz - pz)
+                if d2 < 22 * 22 { return true }
+            }
+        }
+        return false
+    }
+
     /// Assign every pixel to the nearest palette colour.
     static func assign(_ img: RasterImage, palette: [RGB]) -> Quantized {
         let n = img.width * img.height
@@ -77,14 +98,26 @@ public enum ColorQuantizer {
         let minCount = Int(Double(n) * minFraction)
         let minSep2 = 28 * 28
         var palette: [RGB] = []
+        // Pass 1: the frequent flat colours.
         for b in buckets {
             if palette.count >= maxColors { break }
-            if b.count < minCount && !palette.isEmpty { break }
+            if b.count < minCount { break }
             if palette.allSatisfy({ dist2($0, b.color) >= minSep2 }) {
                 palette.append(b.color)
             }
         }
         if palette.isEmpty { palette.append(buckets.first?.color ?? (0, 0, 0)) }
+        // Pass 2: keep smaller *distinct* feature colours (e.g. tiny black eyes)
+        // but drop true anti-aliasing — colours that lie on the blend line
+        // between two palette colours.
+        let noiseFloor = max(6, minCount / 12)
+        for b in buckets {
+            if palette.count >= maxColors { break }
+            if b.count >= minCount || b.count < noiseFloor { continue }
+            if !palette.allSatisfy({ dist2($0, b.color) >= minSep2 }) { continue }
+            if isBlend(b.color, palette) { continue }
+            palette.append(b.color)
+        }
         return assign(img, palette: palette)
     }
 

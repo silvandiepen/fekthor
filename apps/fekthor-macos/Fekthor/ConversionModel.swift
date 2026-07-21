@@ -12,7 +12,8 @@ final class ConversionModel: ObservableObject {
     @Published var mode: Mode = .shapes
     @Published var autoColors: Bool = true
     @Published var colors: Double = 16
-    @Published var epsilon: Double = 2.0
+    /// 0 = coarse (fewer nodes), 1 = fine (more detail). Maps to DP tolerance.
+    @Published var detail: Double = 0.55
     @Published var simplicity: Double = 0.3
     @Published var smoothing: Double = 1.0
     @Published var strokeWidthAuto: Bool = true
@@ -111,8 +112,10 @@ final class ConversionModel: ObservableObject {
         isBusy = true
         let mode = self.mode
         let smoothing = self.smoothing
+        // Higher Detail → finer curves (smaller DP tolerance).
+        let eps = 4.2 - 3.9 * detail
         let options = Fekthor.Options(
-            colors: Int(colors), epsilon: epsilon, simplicity: simplicity, smoothing: smoothing,
+            colors: Int(colors), epsilon: eps, simplicity: simplicity, smoothing: smoothing,
             autoColors: autoColors, strokeWidth: strokeWidthAuto ? nil : strokeWidth,
             strokeSource: strokeSource)
         Task.detached(priority: .userInitiated) {

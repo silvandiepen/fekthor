@@ -293,8 +293,8 @@ private struct InspectorView: View {
                         }
                     }
                 }
-                slider("Detail", value: $model.epsilon, range: 0.25...4, step: 0.25) {
-                    String(format: "%.2f", model.epsilon)
+                slider("Detail", value: $model.detail, range: 0...1, step: 0.05) {
+                    String(format: "%.0f%%", model.detail * 100)
                 }
                 slider("Smoothing", value: $model.smoothing, range: 0...1, step: 0.05) {
                     String(format: "%.0f%%", model.smoothing * 100)
