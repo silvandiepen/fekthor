@@ -78,6 +78,112 @@ public enum ShapesMode {
         runWithDetail(img, config: config).document
     }
 
+    /// A region's colour comes from its OWN pixels — the per-channel median —
+    /// not from a global palette bucket that anti-aliasing pollutes. The median
+    /// is robust to the AA ring (a minority) and to resampling (which leaves few
+    /// exactly-equal pixels, defeating a mode). Black eyes stay black.
+    static func regionDominantColors(_ img: RasterImage, labels: [Int], fallback: [RGB]) -> [RGB] {
+        let n = img.width * img.height
+        guard labels.count == n, !fallback.isEmpty else { return fallback }
+        let count = fallback.count
+        var hist = [Int](repeating: 0, count: count * 3 * 256)
+        var totals = [Int](repeating: 0, count: count)
+        for i in 0..<n {
+            let l = labels[i]
+            if l < 0 || l >= count { continue }
+            let o = i * 4
+            let base = l * 768
+            hist[base + Int(img.data[o])] += 1
+            hist[base + 256 + Int(img.data[o + 1])] += 1
+            hist[base + 512 + Int(img.data[o + 2])] += 1
+            totals[l] += 1
+        }
+        var out = fallback
+        for l in 0..<count where totals[l] > 0 {
+            let half = (totals[l] + 1) / 2
+            var channels = [UInt8](repeating: 0, count: 3)
+            for c in 0..<3 {
+                var acc = 0
+                for v in 0..<256 {
+                    acc += hist[l * 768 + c * 256 + v]
+                    if acc >= half {
+                        channels[c] = UInt8(v)
+                        break
+                    }
+                }
+            }
+            out[l] = (channels[0], channels[1], channels[2])
+        }
+        return out
+    }
+
+    /// Absorb anti-aliasing bands: a *thin* region (area ≈ its boundary length ×
+    /// a pixel or two) whose colour lies on the blend line between its two main
+    /// neighbours is a resampling artefact, not content — merge it into the
+    /// neighbour it borders most. Genuine thin content (shirt stripes) has its
+    /// own non-blend colour and is untouched.
+    static func absorbBlendBands(
+        _ labels: [Int], colors: [RGB], width w: Int, height h: Int
+    ) -> [Int] {
+        let count = colors.count
+        guard count > 2 else { return labels }
+        var area = [Int](repeating: 0, count: count)
+        var boundary = [[Int: Int]](repeating: [:], count: count)
+        var perimeter = [Int](repeating: 0, count: count)
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = y * w + x
+                let a = labels[i]
+                if a < 0 || a >= count { continue }
+                area[a] += 1
+                if x < w - 1 {
+                    let b = labels[i + 1]
+                    if b != a, b >= 0, b < count {
+                        boundary[a][b, default: 0] += 1
+                        boundary[b][a, default: 0] += 1
+                        perimeter[a] += 1
+                        perimeter[b] += 1
+                    }
+                }
+                if y < h - 1 {
+                    let b = labels[i + w]
+                    if b != a, b >= 0, b < count {
+                        boundary[a][b, default: 0] += 1
+                        boundary[b][a, default: 0] += 1
+                        perimeter[a] += 1
+                        perimeter[b] += 1
+                    }
+                }
+            }
+        }
+        var remap = Array(0..<count)
+        for l in 0..<count where area[l] > 0 && perimeter[l] > 0 {
+            let thinness = Double(area[l]) / (Double(perimeter[l]) / 2.0)
+            if thinness > 1.9 { continue }
+            // Two most-bordered neighbours (deterministic: count desc, label asc).
+            let nbs = boundary[l].sorted {
+                $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key
+            }
+            guard let first = nbs.first else { continue }
+            let nbColors = nbs.prefix(2).map { colors[$0.key] }
+            if ColorQuantizer.isBlend(colors[l], nbColors) {
+                remap[l] = first.key
+            }
+        }
+        // Resolve chains (band absorbed into band) deterministically.
+        func resolve(_ l: Int) -> Int {
+            var r = l
+            var hops = 0
+            while remap[r] != r && hops < count {
+                r = remap[r]
+                hops += 1
+            }
+            return r
+        }
+        if remap.enumerated().allSatisfy({ $0.offset == $0.element }) { return labels }
+        return labels.map { $0 >= 0 && $0 < count ? resolve($0) : $0 }
+    }
+
     public static func runWithDetail(_ img: RasterImage, config: ShapesConfig = ShapesConfig())
         -> Output
     {
@@ -142,8 +248,20 @@ public enum ShapesMode {
             labels = quantized.indices
             colors = quantized.palette
         }
+        // Per-region colour re-estimation (flatten=0 path): a region's colour
+        // comes from its OWN pixels — the dominant exact source RGB — not from a
+        // global palette bucket that anti-aliasing pollutes. This is what keeps
+        // black eyes black instead of the bucket's muddy brown, and it makes flat
+        // art round-trip its true colours. Falls back to the palette colour when
+        // no exact colour dominates (photographic regions).
+        var finalLabels = labels
+        var finalColors = colors
+        if !flattenOn {
+            finalLabels = absorbBlendBands(labels, colors: colors, width: img.width, height: img.height)
+            finalColors = regionDominantColors(img, labels: finalLabels, fallback: colors)
+        }
         let transparentOutputLabels = AlphaLabels.outputLabels(
-            labels: labels, indices: quantized.indices, transparentLabel: transparentLabel)
+            labels: finalLabels, indices: quantized.indices, transparentLabel: transparentLabel)
 
         // Shared-edge planar map with geometry refinement: adjacent regions use
         // identical refined boundary chains (no gaps), corners stay sharp, and
@@ -152,14 +270,14 @@ public enum ShapesMode {
             tolerance: config.epsilon * 1.8, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
         let faces = PlanarMap.faces(
-            labels: labels, width: img.width, height: img.height, epsilon: config.epsilon,
+            labels: finalLabels, width: img.width, height: img.height, epsilon: config.epsilon,
             refine: refineOpt)
 
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
         for face in faces {
             if transparentOutputLabels.contains(face.label) { continue }
-            let color = face.label < colors.count ? colors[face.label] : (0, 0, 0)
+            let color = face.label < finalColors.count ? finalColors[face.label] : (0, 0, 0)
             guard let geometry = ShapeGeometryBuilder.build(
                 face: face, tolerance: config.epsilon, straighten: config.straighten,
                 detectPrimitives: true,
