@@ -71,6 +71,14 @@ high-resolution vector preview, and SVG export.
 gradient paint, round-trip fidelity). GitHub Actions builds and tests the engine and builds the
 macOS app on `macos-15` (Xcode 16); green on `main`.
 
+## Next: quality plans
+
+The next quality leap is fully planned in [`docs/plans/`](plans/README.md) — six in-depth,
+self-contained plans (mode-aware metrics & eval harness, geometry refinement with
+straightening/arcs/primitives, Strokes, Shapes+logo, Gradient minimal-regions+radial,
+Auto mode), written for an implementer without prior context. Board cards
+FEKTHOR-088…093 track them.
+
 ## Known gaps / next
 
 - Junction handling in Strokes still leaves small cap pile-ups at crossings.
