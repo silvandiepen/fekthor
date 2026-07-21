@@ -59,7 +59,7 @@ public enum GradientMode {
             indices: q.indices, palette: q.palette, width: img.width, height: img.height,
             minArea: minArea, colorThreshold: bandMerge * bandMerge)
         let refineOpt = RefineOptions(
-            tolerance: config.epsilon, cornerAngle: 32, straighten: config.straighten,
+            tolerance: config.epsilon * 1.8, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
         let faces = PlanarMap.faces(
             labels: labels, width: img.width, height: img.height, epsilon: config.epsilon,

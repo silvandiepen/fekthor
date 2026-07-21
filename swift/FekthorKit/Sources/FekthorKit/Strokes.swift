@@ -93,7 +93,7 @@ public enum StrokesMode {
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
         let refineOpt = RefineOptions(
-            tolerance: config.epsilon, cornerAngle: 32, straighten: config.straighten,
+            tolerance: config.epsilon * 1.6, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
         for chain in chains where chain.count >= 2 {
             let first = chain.first!
@@ -141,7 +141,7 @@ public enum StrokesMode {
         var doc = VectorDocument(width: w, height: h)
         var nextID = 0
         let refineOpt = RefineOptions(
-            tolerance: config.epsilon, cornerAngle: 32, straighten: config.straighten,
+            tolerance: config.epsilon * 1.6, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
         let fillRefineOpt = RefineOptions(
             tolerance: max(1.0, config.epsilon), cornerAngle: 32, straighten: config.straighten,

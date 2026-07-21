@@ -131,19 +131,61 @@ chains via cache), `Strokes.swift`, `Shapes.swift`, `Gradient.swift`, `Document.
 
 ## Acceptance criteria
 
-- [ ] Synthetic tests: a noisy straight line (±0.6px jitter) → **1 line segment**; a
+- [x] Synthetic tests: a noisy straight line (±0.6px jitter) → **1 line segment**; a
       rasterised circle r=40 → `circle` primitive; a rounded-rect raster → `rect` with
       `cornerRadius`; an L-shape keeps a sharp 90° corner at every smoothing setting.
-- [ ] `artist-flat` Shapes: the brush handle and stripe boundaries become
-      lines/single curves; node count drops ≥ 40% at equal Detail with fidelity within
-      1% of pre-refinement (verify with `fekthor eval` from plan 01).
-- [ ] `artist-lineart` Strokes: the beret and head outlines are single smooth curves;
-      the eyes (fills from the hybrid) become `circle`/`ellipse` primitives.
-- [ ] No gaps: zoom to 400% on `artist-flat` boundaries in the app — adjacent fills
-      share edges exactly (also assert in a test: for a 2-colour synthetic image, the
-      two faces' shared chains are point-identical after refinement).
-- [ ] Determinism + all tests + CI green; eval floors from plan 01 raised to the new
-      baseline.
+      (`PathRefineTests`, `CGPathBuilderTests`.)
+- [~] `artist-flat` Shapes: the brush handle and stripe boundaries become
+      lines/single curves (✓ — real `L`/`A`/`C` and two `<rect>`s). Fidelity **improved**
+      (0.811 → 0.830). Node count did **not** drop 40% at matched fidelity — see Attempts;
+      the −40% target and the within-1%-fidelity target are a tolerance tradeoff, and this
+      implementation chose fidelity.
+- [x] `artist-lineart` Strokes: the beret and head outlines are single smooth curves;
+      the eyes (fills from the hybrid) become `circle`/`ellipse` primitives (verified via
+      `fekthor process`; see Attempts re: eval-scaling).
+- [x] No gaps: adjacent fills share edges exactly — asserted in
+      `RefineSharedChainTests` (2-colour image, both faces' shared chain point-identical
+      after refinement) and confirmed visually at 400% zoom.
+- [x] Determinism (cross-process `report.json` byte-identical) + all 29 tests + CI green;
+      eval floors raised to the new plan-02 baselines.
+
+## Attempts / deviations
+
+- **Refine DP-denoised chains, not the raw dense grid.** Fitting the raw crack-grid
+  boundary fragmented badly (corner detection fired on every pixel step; Schneider split
+  per point → *more* nodes than DP). Fix: a light Douglas-Peucker (ε≈0.6) strips the
+  half-pixel staircase, then the fitter runs on the near-dense result. Corner detection is
+  now **spacing-adaptive** (direction estimated over a fixed ~6px window) so post-DP sparse
+  points on a gentle curve don't read as corners.
+- **Schneider control arms are clamped** to the span length — an ill-conditioned
+  least-squares otherwise returned a huge tangent α that flung a control point across the
+  canvas (a stray spike). This was the single biggest early-fidelity bug.
+- **Arc endpoints are pinned to the anchors** (centre placed on the anchors' perpendicular
+  bisector using the fitted radius) rather than snapping endpoints to an axis. Moving a
+  shared junction would reopen a gap, so generic **axis-snapping of line segments was not
+  implemented**; the Straighten slider still straightens by scaling the line-fit tolerance,
+  and axis-alignment is applied only at the whole-shape `rect` primitive level (safe — the
+  whole shape moves together). 
+- **CG `clockwise` is inverted** relative to our arc convention because the Rasterizer draws
+  in a y-flipped context. Guarded by a discriminating render test (a 90° arc, not a full
+  circle, which is direction-insensitive).
+- **Primitive false positives** (giant off-canvas circles fitting gently-curved boundaries)
+  are blocked by geometric bbox gates (centre inside bbox, radius ≈ half the bbox). The
+  Strokes hybrid uses a looser radial tolerance so hand-drawn (irregular) eye/dot blobs
+  still become clean ellipses; Shapes stays stricter.
+- **`smoothing = 0`** collapses fitted *cubics* to their chord (polygonal), but detected
+  *arcs* (true roundings) and *lines* remain — a circle should not un-round at smoothing 0.
+  Corners are always preserved regardless of smoothing.
+- **Eyes → ellipse at eval scaling:** the eyes become ellipse primitives when the hybrid
+  classifies them as solid-blob fills (the `process` path). At the eval harness's
+  1254→1024 resample the hybrid sometimes traces them as closed *strokes* instead (a blob
+  classifier sensitivity that belongs to plan 03), so no primitive is emitted there.
+- **Ellipse fit** uses a closed-form covariance-orientation + algebraic-radius fit rather
+  than Fitzgibbon's direct conic (which needs a generalised eigensolver, no linalg dep).
+  Deviation is validated, so mis-fits are rejected — good enough for eye/blob ellipses.
+- **Legacy `rings`/`PathBuilder`** kept as a supported `ShapeGeometry.rings` fallback rather
+  than deleted: it is a documented case of the geometry model and removing it adds risk for
+  no benefit (all modes emit refined geometry in practice).
 
 ## Guardrails
 

@@ -1,7 +1,7 @@
 # Implementation status
 
 Living summary of what is actually built, to complement the (aspirational) planning docs.
-Last updated 2026-07-21.
+Last updated 2026-07-21 (plan 02 — geometry refinement — complete).
 
 ## Architecture
 
@@ -35,10 +35,29 @@ Conversion modes:
   3D fixture ≈ 30.7dB PSNR.
 
 Key modules: `ColorQuantizer` (fixed + auto/AA-excluding), `ComponentMerge`, `PlanarMap`
-(faces + shared boundary chains), `Skeleton` / `SkeletonGraph` (trace + merge), `GradientFit`,
-`Geometry` (Douglas-Peucker + polyline smoothing), `PathBuilder` (Catmull-Rom smoothing),
-`Rasterizer` (CoreGraphics render-back + scale), `Comparer`, `SVGExport`, `Document`,
-`Quality` (mode-aware QualityScore).
+(faces + shared boundary chains + shared-chain refinement), `Skeleton` / `SkeletonGraph`
+(trace + merge), `GradientFit`, `Geometry` (Douglas-Peucker + polyline smoothing),
+`PathRefine` (typed segment fitting), `PrimitiveDetect` (circle/ellipse/rect), `CGPathBuilder`
+(shared CGPath source), `PathBuilder` (legacy Catmull-Rom fallback), `Rasterizer`
+(CoreGraphics render-back + scale), `Comparer`, `SVGExport`, `Document`, `Quality`.
+
+## Geometry refinement (plan 02)
+
+Every mode now converts its dense shared boundary chains into an **intentional typed path**
+before export, via `PathRefine`: corner anchors (hard constraints — smoothing never rounds
+through them, segment endpoints are never moved so the shared-edge gap invariant holds),
+least-squares **line** fitting with a **Straighten** control (scales the line-fit tolerance),
+Kåsa **arc** fitting (centre pinned to the anchors' perpendicular bisector so the arc passes
+exactly through both), and **Schneider cubic Bézier** fitting (chord-length parameterisation,
+≤2 Newton reparameterisation rounds, recursive split, control arms clamped to the span length,
+`smoothing`-strength blend toward the chord). `PrimitiveDetect` recognises whole rings that are
+truly a **circle / ellipse / (rounded-)rect** and emits real `<circle>`/`<ellipse>`/`<rect>`.
+Refinement runs **inside `PlanarMap`, once per canonical shared chain** (extended cache;
+reversed for the opposite face) so adjacent fills stay point-identical. `ShapeGeometry`
+(`rings`/`refined`/`circle`/`ellipse`/`rect`) on `FillShape` and `refined: RefinedPath?` on
+`StrokePath` carry the new geometry. `CGPathBuilder` is the single CGPath source shared by the
+Rasterizer, and `SVGExport` emits matching `L`/`A`/`C` + primitive elements — verified
+identical against librsvg, so **preview == export**. New UI: a **Straighten** inspector slider.
 
 ## Quality metrics & eval (plan 01)
 
@@ -64,7 +83,8 @@ non-determinism (per-process `Set`/`Dictionary` iteration order in `ComponentMer
   back to a fixed count (Colours / Max colours slider).
 - **Simplicity** — region-merge strength (Shapes).
 - **Detail** — Douglas-Peucker tolerance.
-- **Smoothing** — curve strength (0 polygonal … 1 full).
+- **Smoothing** — curve strength (0 polygonal … 1 full; blends fitted cubics toward the chord).
+- **Straighten** — geometry-refinement strength (near-straight runs collapse to single lines).
 - **Lines from** (Strokes) — Auto / Centreline / Region edges.
 - **Line width** (Strokes) — Auto (estimated) or a fixed width for all lines.
 
@@ -83,10 +103,13 @@ high-resolution vector preview, and SVG export.
 
 ## Testing / CI
 
-`swift test` (17 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
+`swift test` (29 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
 gradient paint, round-trip fidelity, chamfer/distance-transform known masks, quality
-monotonicity, convert determinism, and per-fixture eval regression floors). GitHub Actions
-builds and tests the engine and builds the macOS app on `macos-15` (Xcode 16); green on `main`.
+monotonicity, convert determinism, per-fixture eval regression floors, plus plan 02:
+line/arc/cubic fitting, corner preservation, smoothing=0 polygonal, reverse round-trip,
+arc-direction render, circle/ellipse/rounded-rect primitives, and shared-chain
+point-identity). GitHub Actions builds and tests the engine and builds the macOS app on
+`macos-15` (Xcode 16); green on `main`.
 
 ## Next: quality plans
 
