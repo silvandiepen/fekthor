@@ -91,13 +91,41 @@ improve results (each later plan says to).
 
 ## Acceptance criteria
 
-- [ ] `fekthor eval` runs over the 5 fixtures × 3 modes in < 60s total and prints the table.
-- [ ] Strokes on `artist-lineart` scores overall ≥ 0.75 with the *new* metric (it looks
+- [x] `fekthor eval` runs over the 5 fixtures × 3 modes in < 60s total and prints the table.
+      (~8s on Apple Silicon; table aligned.)
+- [x] Strokes on `artist-lineart` scores overall ≥ 0.75 with the *new* metric (it looks
       good; the metric must agree), while Strokes on `artist-3d` scores clearly lower than
       Gradient on `artist-3d` — sanity that the metric ranks modes correctly per family.
-- [ ] Deterministic: two eval runs produce identical report.json (timestamps excluded).
-- [ ] All existing tests pass; new tests added for Chamfer (known masks → known distance)
+      (Measured: lineart→strokes 0.832; artist-3d strokes 0.029 vs gradient 0.480.)
+- [x] Deterministic: two eval runs produce identical report.json (timestamps excluded).
+      (Required fixing a latent cross-process non-determinism — see Attempts below.)
+- [x] All existing tests pass; new tests added for Chamfer (known masks → known distance)
       and for score monotonicity (adding noise to rendered lowers fidelity).
+
+## Measured baselines (2026-07-21, release, 1024 working size)
+
+Canonical pairs and the regression floors (~0.03 below baseline) set in
+`EvalRegressionTests`:
+
+| fixture | mode | overall | floor |
+|---|---|---|---|
+| artist-lineart | strokes | 0.832 | 0.80 |
+| artist-flat | shapes | 0.679 | 0.65 |
+| thor-flat | shapes | 0.400 | 0.36 |
+| artist-3d | gradient | 0.480 | 0.45 |
+| thor-3d | gradient | 0.221 | 0.19 |
+
+## Attempts / deviations
+
+- **Cross-process determinism fix (required, not a conversion change).** The eval
+  determinism criterion exposed that the pipeline was byte-stable *within* a process
+  but not *across* processes: `ComponentMerge.neighbors` iterated a `Set<Int>` and
+  `PlanarMap.faces` sorted equal-area faces from a `Dictionary` map with no tie-breaker.
+  Swift seeds its hasher per process, so `Set`/`Dictionary` iteration order — and thus
+  the output geometry — changed run to run, violating global invariant #1. Fixed by
+  sorting the neighbour list and adding a `label` tie-breaker to the face sort. This
+  restores determinism without altering the intended geometry (measurement-only scope
+  preserved; scores are unchanged within noise).
 
 ## Guardrails
 

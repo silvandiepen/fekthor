@@ -1,7 +1,7 @@
 # Implementation status
 
 Living summary of what is actually built, to complement the (aspirational) planning docs.
-Last updated 2026-07-20.
+Last updated 2026-07-21.
 
 ## Architecture
 
@@ -37,7 +37,23 @@ Conversion modes:
 Key modules: `ColorQuantizer` (fixed + auto/AA-excluding), `ComponentMerge`, `PlanarMap`
 (faces + shared boundary chains), `Skeleton` / `SkeletonGraph` (trace + merge), `GradientFit`,
 `Geometry` (Douglas-Peucker + polyline smoothing), `PathBuilder` (Catmull-Rom smoothing),
-`Rasterizer` (CoreGraphics render-back + scale), `Comparer`, `SVGExport`, `Document`.
+`Rasterizer` (CoreGraphics render-back + scale), `Comparer`, `SVGExport`, `Document`,
+`Quality` (mode-aware QualityScore).
+
+## Quality metrics & eval (plan 01)
+
+`Quality.score` gives a mode-aware `QualityScore` (`fidelity`, `simplicity`, `overall =
+0.75*fidelity + 0.25*simplicity`, plus a `detail` map of raw sub-metrics), wired into
+`Fekthor.Result.quality` and shown as one honest overall percentage in the app for every
+mode. Fidelity per mode: Shapes = ½ exact-pixel + ½ edge alignment (Sobel edge maps
+compared with an O(n) two-pass 3-4 chamfer distance transform); Strokes = chamfer between
+line masks (dark ink for line art, source edges otherwise); Gradient = PSNR-weighted with
+a loose exact-pixel term. `fekthor eval [--fixtures DIR] [--out DIR] [--json]` runs all
+three modes over every fixture at 1024 working size (~8s for 5×3), prints an aligned table
+and writes per-run artefacts; `--json` emits a deterministic `report.json`. Regression
+floors live in `EvalRegressionTests`. Note: this plan also fixed a latent cross-process
+non-determinism (per-process `Set`/`Dictionary` iteration order in `ComponentMerge` and
+`PlanarMap`) so identical runs now produce byte-identical SVG (invariant #1).
 
 ## Controls
 
@@ -67,9 +83,10 @@ high-resolution vector preview, and SVG export.
 
 ## Testing / CI
 
-`swift test` (8 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
-gradient paint, round-trip fidelity). GitHub Actions builds and tests the engine and builds the
-macOS app on `macos-15` (Xcode 16); green on `main`.
+`swift test` (17 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
+gradient paint, round-trip fidelity, chamfer/distance-transform known masks, quality
+monotonicity, convert determinism, and per-fixture eval regression floors). GitHub Actions
+builds and tests the engine and builds the macOS app on `macos-15` (Xcode 16); green on `main`.
 
 ## Next: quality plans
 
