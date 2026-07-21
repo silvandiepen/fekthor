@@ -157,7 +157,8 @@ public enum GradientRegions {
     /// merging with each other so vignetted backgrounds coalesce into one shape.
     public static func segment(
         indices: [Int], palette: [RGB], img: RasterImage, width w: Int, height h: Int,
-        minArea: Int, tau: Double, colorCap: Double = 200, borderBias: Double = 0.8
+        minArea: Int, looseArea: Int = 0, tau: Double, colorCap: Double = 200,
+        borderBias: Double = 0.8
     ) -> (labels: [Int], colors: [RGB]) {
         let n = w * h
         var comp = [Int](repeating: -1, count: n)
@@ -268,10 +269,17 @@ public enum GradientRegions {
         // Pre-pass: absorb sub-minArea regions into their most colour-similar
         // neighbour (area-only, as before). Border regions are exempt from being
         // absorbed away so a thin vignette rim is not eaten (plan 05 §3).
-        if minArea > 0 {
+        // Between minArea and looseArea (texture-speckle range) absorption is
+        // colour-gated: a beard fleck sits near its neighbour's colour and
+        // melts away, while a same-sized nose highlight or eye-white is far
+        // from every neighbour and survives.
+        let effectiveLoose = max(minArea, looseArea)
+        let looseGate = 55.0 * 55.0
+        if effectiveLoose > 0 {
             for _ in 0..<40 {
                 var changed = false
-                for c in 0..<count where find(c) == c && !border[c] && moments[c].n < Double(minArea) {
+                for c in 0..<count
+                where find(c) == c && !border[c] && moments[c].n < Double(effectiveLoose) {
                     let nbs = neighbors(c)
                     if nbs.isEmpty { continue }
                     let cc = meanColor(c)
@@ -284,11 +292,11 @@ public enum GradientRegions {
                             best = nb
                         }
                     }
-                    if best >= 0 {
-                        let lo = min(c, best), hi = max(c, best)
-                        union(lo, hi)
-                        changed = true
-                    }
+                    if best < 0 { continue }
+                    if moments[c].n >= Double(minArea) && bestd > looseGate { continue }
+                    let lo = min(c, best), hi = max(c, best)
+                    union(lo, hi)
+                    changed = true
                 }
                 if !changed { break }
             }

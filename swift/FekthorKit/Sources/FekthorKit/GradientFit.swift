@@ -159,7 +159,11 @@ public enum GradientFit {
         }
         let solidFallback = Paint.solid([fallback.r, fallback.g, fallback.b])
         if n < 24 { return solidFallback }
-        let k = max(2, stopCount)
+        // A dominant region (vignetted background, large dome) carries a
+        // nonlinear shading profile a coarse ramp visibly misfits — double the
+        // stop budget once it spans a tenth of the image.
+        let large = Double(n) >= 0.1 * Double(w * h)
+        let k = max(2, large ? stopCount * 2 : stopCount)
         let nn = Double(n)
 
         // Solid reference RMSE (mean colour).
@@ -256,18 +260,23 @@ public enum GradientFit {
         let candidates = [(cxAll, cyAll), bright, dark]
 
         var radial: (Paint, Double)? = nil
+        var radialCenter = (0.0, 0.0)
         var dbuf = [Double](repeating: 0, count: n)
-        for (ccx, ccy) in candidates {
+        func tryRadialCenter(_ ccx: Double, _ ccy: Double) {
+            var maxD = 0.0
             for i in 0..<n {
                 let dx = px[i] - ccx, dy = py[i] - ccy
-                dbuf[i] = (dx * dx + dy * dy).squareRoot()
+                let d = (dx * dx + dy * dy).squareRoot()
+                dbuf[i] = d
+                if d > maxD { maxD = d }
             }
-            let sorted = dbuf.sorted()
-            let radius = sorted[min(n - 1, Int(0.95 * Double(n)))]
-            if radius < 1.0 { continue }
+            // Far-edge radius (O(1) vs a 95th-percentile sort — the ramp bins
+            // absorb the profile, so the exact quantile doesn't matter).
+            let radius = maxD * 0.97
+            if radius < 1.0 { return }
             var t = [Double](repeating: 0, count: n)
             for i in 0..<n { t[i] = min(1, dbuf[i] / radius) }
-            guard let ramp = rampAlong(t, pr, pg, pb, k: k) else { continue }
+            guard let ramp = rampAlong(t, pr, pg, pb, k: k) else { return }
             let rmse = (ramp.sse / (nn * 3)).squareRoot()
             if radial == nil || rmse < radial!.1 {
                 let paint = Paint.radial(
@@ -275,6 +284,24 @@ public enum GradientFit {
                         center: Pt(ccx, ccy), radius: radius,
                         stops: makeStops(ramp.off, ramp.cr, ramp.cg, ramp.cb)))
                 radial = (paint, rmse)
+                radialCenter = (ccx, ccy)
+            }
+        }
+        for (ccx, ccy) in candidates { tryRadialCenter(ccx, ccy) }
+        // Deterministic pattern search around the winning centre (large regions
+        // only — that's where a misplaced centre costs whole-image fidelity).
+        if large, radial != nil {
+            var step = Double(max(maxx - minx, maxy - miny)) / 8
+            var evals = 0
+            while step >= 2 && evals < 40 {
+                let (cx, cy) = radialCenter
+                let before = radial!.1
+                tryRadialCenter(cx + step, cy)
+                tryRadialCenter(cx - step, cy)
+                tryRadialCenter(cx, cy + step)
+                tryRadialCenter(cx, cy - step)
+                evals += 4
+                if radial!.1 >= before { step /= 2 }
             }
         }
 

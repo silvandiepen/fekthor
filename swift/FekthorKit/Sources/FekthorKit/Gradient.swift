@@ -55,7 +55,7 @@ public enum GradientMode {
 
     static func smoothed(_ img: RasterImage, texture: Double) -> RasterImage {
         if texture < 0.06 { return img }
-        let radius = max(2, min(img.width, img.height) / 256)
+        let radius = max(2, min(img.width, img.height) / 340)
         let once = Preprocess.kuwahara(img, radius: radius)
         return texture < 0.12 ? once : Preprocess.kuwahara(once, radius: radius)
     }
@@ -63,14 +63,17 @@ public enum GradientMode {
     static func segment(_ img: RasterImage, config: GradientConfig)
         -> (labels: [Int], colors: [RGB])
     {
-        segmentSmoothed(smoothed(img), config: config)
+        let texture = Preprocess.textureFraction(img)
+        return segmentSmoothed(
+            smoothed(img, texture: texture), config: config,
+            minAreaScale: texture < 0.06 ? 1 : 3)
     }
 
     /// `img` must already be de-textured (`smoothed`) — `run` passes the same
     /// smoothed image here and to the gradient fitter so they never disagree.
-    static func segmentSmoothed(_ img: RasterImage, config: GradientConfig)
-        -> (labels: [Int], colors: [RGB])
-    {
+    static func segmentSmoothed(
+        _ img: RasterImage, config: GradientConfig, minAreaScale: Double = 1
+    ) -> (labels: [Int], colors: [RGB]) {
         let q =
             config.autoColors
             ? ColorQuantizer.quantizeAuto(img, maxColors: max(2, config.colors), minFraction: 0.003)
@@ -87,11 +90,15 @@ public enum GradientMode {
         // coalescing. The mapping is calibrated so the default Blend keeps the
         // gradient eval rows above their floors while cutting shape count.
         let tau = 150.0 + 1200.0 * s
+        // Textured sources leave speckle flecks well above the smooth-source
+        // floor; the caller widens the colour-gated loose absorption band for
+        // them (strict floor unchanged — nose highlights survive).
         let areaFraction = 0.00004 + 0.0002 * s
         let minArea = max(8, Int(Double(img.width * img.height) * areaFraction))
+        let looseArea = Int(Double(minArea) * minAreaScale)
         return GradientRegions.segment(
             indices: q.indices, palette: q.palette, img: img, width: img.width, height: img.height,
-            minArea: minArea, tau: tau)
+            minArea: minArea, looseArea: looseArea, tau: tau)
     }
 
     public static func run(_ img: RasterImage, config: GradientConfig = GradientConfig())
@@ -105,7 +112,8 @@ public enum GradientMode {
         // the Kuwahara means' bright drift.
         let texture = Preprocess.textureFraction(img)
         let flattened = smoothed(img, texture: texture)
-        let (labels, colors) = segmentSmoothed(flattened, config: config)
+        let (labels, colors) = segmentSmoothed(
+            flattened, config: config, minAreaScale: texture < 0.06 ? 1 : 3)
         let refineOpt = RefineOptions(
             tolerance: config.epsilon * 1.8, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
