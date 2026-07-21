@@ -14,7 +14,11 @@ let package = Package(
         .executable(name: "fekthor", targets: ["fekthor"]),
     ],
     targets: [
-        .target(name: "FekthorKit"),
+        // Optimise the engine even in Debug builds — the per-pixel loops are far
+        // too slow at -Onone, and the app is normally built in Debug.
+        .target(
+            name: "FekthorKit",
+            swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]),
         .executableTarget(name: "fekthor", dependencies: ["FekthorKit"]),
         .testTarget(name: "FekthorKitTests", dependencies: ["FekthorKit"]),
     ]
