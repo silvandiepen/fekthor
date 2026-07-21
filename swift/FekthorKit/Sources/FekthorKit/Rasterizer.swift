@@ -36,21 +36,12 @@ public enum Rasterizer {
             ctx.translateBy(x: 0, y: CGFloat(h))
             ctx.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
 
+            // One shared CGPath builder (CGPathBuilder) drives both this preview
+            // and the SVG export, so they cannot diverge (plan 02).
             for el in doc.elements {
                 switch el {
                 case .fill(let f):
-                    let path = CGMutablePath()
-                    for ring in f.rings where ring.count >= 3 {
-                        let (start, segs) = PathBuilder.closed(ring, strength: smoothing)
-                        path.move(to: CGPoint(x: start.x, y: start.y))
-                        for s in segs {
-                            path.addCurve(
-                                to: CGPoint(x: s.end.x, y: s.end.y),
-                                control1: CGPoint(x: s.c1.x, y: s.c1.y),
-                                control2: CGPoint(x: s.c2.x, y: s.c2.y))
-                        }
-                        path.closeSubpath()
-                    }
+                    let path = CGPathBuilder.fillPath(f.geometry, smoothing: smoothing)
                     switch f.paint {
                     case .solid(let rgb):
                         ctx.addPath(path)
@@ -73,18 +64,8 @@ public enum Rasterizer {
                         ctx.restoreGState()
                     }
                 case .stroke(let s):
-                    guard s.points.count >= 2 else { continue }
-                    let path = CGMutablePath()
-                    let (start, segs) =
-                        s.closed ? PathBuilder.closed(s.points) : PathBuilder.open(s.points)
-                    path.move(to: CGPoint(x: start.x, y: start.y))
-                    for seg in segs {
-                        path.addCurve(
-                            to: CGPoint(x: seg.end.x, y: seg.end.y),
-                            control1: CGPoint(x: seg.c1.x, y: seg.c1.y),
-                            control2: CGPoint(x: seg.c2.x, y: seg.c2.y))
-                    }
-                    if s.closed { path.closeSubpath() }
+                    guard s.refined != nil || s.points.count >= 2 else { continue }
+                    let path = CGPathBuilder.strokePath(s, smoothing: smoothing)
                     ctx.addPath(path)
                     ctx.setStrokeColor(cgColor(s.color))
                     ctx.setLineWidth(CGFloat(s.width))

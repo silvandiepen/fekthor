@@ -182,10 +182,16 @@ public enum PathRefine {
 
         let startAngle = atan2(a.y - cy, a.x - cx)
         let endAngle = atan2(b.y - cy, b.x - cx)
-        // Sweep direction: sign of the cross product of (a-c)→(mid path point).
+        // Direction convention (used identically by flatten, CG and SVG): the arc
+        // is traversed in the direction that reaches an interior sample within
+        // less than a half-turn. In y-down space, increasing atan2 angle is
+        // clockwise on screen, so `clockwise == true` means increasing angle.
         let midPt = span[span.count / 2]
-        let cross = (a.x - cx) * (midPt.y - cy) - (a.y - cy) * (midPt.x - cx)
-        let clockwise = cross < 0  // in y-down space, negative cross = clockwise
+        let midAng = atan2(midPt.y - cy, midPt.x - cx)
+        var inc = midAng - startAngle
+        while inc < 0 { inc += 2 * .pi }
+        while inc >= 2 * .pi { inc -= 2 * .pi }
+        let clockwise = inc < .pi
         let sweep = arcSweep(startAngle, endAngle, clockwise: clockwise)
         if sweep < 15 * .pi / 180 { return nil }
         return .arc(
@@ -449,7 +455,7 @@ public enum PathRefine {
                 let steps = max(2, Int((sweep / (2 * .pi)) * 64) + 2)
                 for s in 1...steps {
                     let t = Double(s) / Double(steps)
-                    let ang = cw ? sa - sweep * t : sa + sweep * t
+                    let ang = cw ? sa + sweep * t : sa - sweep * t
                     out.append(Pt(c.x + r * cos(ang), c.y + r * sin(ang)))
                 }
                 cur = seg.endPoint
@@ -568,9 +574,10 @@ public enum PathRefine {
         return atan2(cross, dot)
     }
 
-    /// Absolute swept angle from `sa` to `ea` in the given direction, in [0, 2π).
+    /// Swept angle from `sa` to `ea`, in [0, 2π). `clockwise` means the
+    /// increasing-atan2-angle direction (screen-clockwise in y-down space).
     static func arcSweep(_ sa: Double, _ ea: Double, clockwise: Bool) -> Double {
-        var d = clockwise ? sa - ea : ea - sa
+        var d = clockwise ? ea - sa : sa - ea
         while d < 0 { d += 2 * .pi }
         while d >= 2 * .pi { d -= 2 * .pi }
         return d
