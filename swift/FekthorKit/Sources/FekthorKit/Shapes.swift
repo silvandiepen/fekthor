@@ -23,7 +23,7 @@ public struct ShapesConfig {
     public var flatten: Double
     public init(
         colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, simplicity: Double = 0.3,
-        autoColors: Bool = true, smoothing: Double = 1.0, straighten: Double = 0.5,
+        autoColors: Bool = true, smoothing: Double = 0.65, straighten: Double = 0.5,
         autoColorMinFraction: Double = 0.004, flatten: Double = 0
     ) {
         self.colors = colors

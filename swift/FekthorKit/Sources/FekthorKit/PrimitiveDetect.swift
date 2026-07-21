@@ -19,6 +19,19 @@ public enum PrimitiveDetect {
         guard pts.count >= 6 else { return nil }
         if let c = detectCircle(pts, tolerance: tolerance) { return c }
         if let e = detectEllipse(pts, tolerance: tolerance) { return e }
+        // Small organic blobs (eyes, dots): a chunky pixel ring can miss the
+        // strict ellipse test and then pass as a rounded rect — visually wrong
+        // (rounded squares for eyes). Below ~26px prefer a looser ellipse; below
+        // ~20px never emit a rect at all.
+        var minx = Double.greatestFiniteMagnitude, miny = minx
+        var maxx = -minx, maxy = -minx
+        for p in pts {
+            minx = min(minx, p.x); miny = min(miny, p.y)
+            maxx = max(maxx, p.x); maxy = max(maxy, p.y)
+        }
+        let maxDim = max(maxx - minx, maxy - miny)
+        if maxDim < 26, let e = detectEllipse(pts, tolerance: tolerance * 1.8) { return e }
+        if maxDim < 20 { return nil }
         if let r = detectRect(pts, tolerance: tolerance, straighten: straighten) { return r }
         return nil
     }

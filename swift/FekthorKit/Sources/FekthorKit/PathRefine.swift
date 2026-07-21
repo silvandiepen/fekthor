@@ -95,8 +95,24 @@ public enum PathRefine {
             // Seam the loop at index 0 (already canonicalised upstream) and fit
             // the whole loop as one span; a true circle is caught by primitive
             // detection first, so what reaches here is a smooth non-circular loop.
+            // The seam tangent must be PERIODIC — the same direction entering and
+            // leaving index 0 — or the two fitted ends meet with a tangent break
+            // that renders as a visible kink (the "angular nose").
             var span = pts
             span.append(pts[0])
+            let n = pts.count
+            let seamT = normalize(Pt(pts[1].x - pts[n - 1].x, pts[1].y - pts[n - 1].y))
+            if seamT.x != 0 || seamT.y != 0 {
+                var beziers: [[Pt]] = []
+                fitCubic(
+                    span, seamT, Pt(-seamT.x, -seamT.y), curveTolerance(opt), depth: 0,
+                    into: &beziers)
+                var segs: [RefinedSegment] = []
+                for b in beziers {
+                    segs.append(.cubic(c1: b[1], c2: b[2], to: b[3]))
+                }
+                return RefinedPath(start: pts[0], segments: segs, closed: true)
+            }
             let segs = fitSpan(span, opt)
             return RefinedPath(start: pts[0], segments: segs, closed: true)
         }
@@ -140,7 +156,15 @@ public enum PathRefine {
         for i in 1..<(span.count - 1) {
             maxD = max(maxD, perpDist(span[i], a, b))
         }
-        return maxD <= tol ? .line(to: b) : nil
+        if maxD > tol { return nil }
+        // Scale-aware bow guard: a short span of a small curve (a nose side, an
+        // eyebrow cap) can sit within the absolute tolerance yet visibly bow —
+        // flattening it reads as a polygon. Accept a line only when the bow is
+        // also a small *fraction* of the chord; long genuinely-straight runs
+        // (stripes, seams) bow well under 2% and still pass.
+        let chordLen = dist(a, b)
+        if maxD > max(0.35, chordLen * 0.035) { return nil }
+        return .line(to: b)
     }
 
     /// A circular arc through the span. The circle centre is placed on the
@@ -178,7 +202,7 @@ public enum PathRefine {
         for p in span {
             maxD = max(maxD, abs((dist(p, Pt(cx, cy))) - r))
         }
-        if maxD > opt.tolerance { return nil }
+        if maxD > curveTolerance(opt) { return nil }
 
         let startAngle = atan2(a.y - cy, a.x - cx)
         let endAngle = atan2(b.y - cy, b.x - cx)
@@ -229,12 +253,26 @@ public enum PathRefine {
             turn[i] = abs(angleBetween(v1, v2))
         }
         var corners: [Int] = []
+        // Sharpness confirmation: a real corner concentrates its turn in a few
+        // samples; a tight-but-smooth curl (a nose tip, an ear attachment)
+        // spreads the same total turn across the window. Require the turn over a
+        // short ±ks window to carry a substantial share of the wide-window turn,
+        // otherwise it is a smooth curve — fit it, don't anchor it.
+        let ks = max(1, k / 3)
+        func shortTurn(_ i: Int) -> Double {
+            let iPrev = closed ? ((i - ks + n) % n) : max(0, i - ks)
+            let iNext = closed ? ((i + ks) % n) : min(n - 1, i + ks)
+            let v1 = Pt(sm[i].x - sm[iPrev].x, sm[i].y - sm[iPrev].y)
+            let v2 = Pt(sm[iNext].x - sm[i].x, sm[iNext].y - sm[i].y)
+            return abs(angleBetween(v1, v2))
+        }
         for i in lo..<hi where turn[i] > cornerRad {
             let p = closed ? ((i - 1 + n) % n) : i - 1
             let q = closed ? ((i + 1) % n) : i + 1
             // Local maximum with a deterministic tie-break (strictly greater than
             // the successor, ≥ the predecessor).
             if turn[i] >= turn[p] && turn[i] > turn[q] {
+                if ks < k && shortTurn(i) < turn[i] * 0.45 { continue }
                 if let last = corners.last, i - last < k { continue }
                 corners.append(i)
             }
@@ -244,16 +282,26 @@ public enum PathRefine {
 
     // MARK: - Schneider cubic fitting
 
+    /// Smoothing drives the *scale* of curve fitting: high smoothing loosens the
+    /// fit tolerance so the fitter emits fewer, longer, more sweeping cubics
+    /// (fewer anchor points); low smoothing tracks the samples tightly. This is
+    /// what visually reads as "smoothing" — not per-vertex rounding.
+    @inline(__always)
+    static func curveTolerance(_ opt: RefineOptions) -> Double {
+        // 0 → 0.7× (tight, faithful) … 1 → 2× (long sweeping curves). Kept ≤2×
+        // so shared fill boundaries can't drift visibly at full smoothing.
+        opt.tolerance * (0.7 + 1.3 * opt.smoothing)
+    }
+
     static func fitCubics(_ span: [Pt], _ opt: RefineOptions) -> [RefinedSegment] {
         let n = span.count
         let leftT = normalize(Pt(span[1].x - span[0].x, span[1].y - span[0].y))
         let rightT = normalize(Pt(span[n - 2].x - span[n - 1].x, span[n - 2].y - span[n - 1].y))
         var beziers: [[Pt]] = []
-        fitCubic(span, leftT, rightT, opt.tolerance, depth: 0, into: &beziers)
+        fitCubic(span, leftT, rightT, curveTolerance(opt), depth: 0, into: &beziers)
         var segs: [RefinedSegment] = []
         for b in beziers {
-            let blended = blendCubic(b, smoothing: opt.smoothing)
-            segs.append(.cubic(c1: blended[1], c2: blended[2], to: blended[3]))
+            segs.append(.cubic(c1: b[1], c2: b[2], to: b[3]))
         }
         return segs
     }

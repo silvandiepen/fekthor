@@ -52,24 +52,23 @@ final class PathRefineTests: XCTestCase {
     }
 
     /// smoothing = 0 collapses fitted cubics to their chord (polygonal result).
-    func testSmoothingZeroIsPolygonal() {
-        // A wavy free-form curve (no clean line/arc) fits cubics.
+    func testSmoothingReducesAnchorPoints() {
+        // New Smoothing semantics (2026-07-21, user-defined): the slider drives
+        // the *scale* of curve fitting — high smoothing yields fewer, longer
+        // cubic segments (fewer anchor points); low smoothing tracks tightly.
         var pts: [Pt] = []
-        for i in 0..<30 {
+        for i in 0..<120 {
             let x = Double(i)
-            pts.append(Pt(x, 6 * sin(x / 4)))
+            pts.append(Pt(x, 6 * sin(x / 7) + 1.5 * sin(x / 2.3)))
         }
-        let o = RefineOptions(tolerance: 0.4, cornerAngle: 80, straighten: 0.0, smoothing: 0)
-        let path = PathRefine.refine(pts, closed: false, options: o)
-        // Every cubic must be collapsed to a straight chord (control points on the line).
-        var cur = path.start
-        for seg in path.segments {
-            if case .cubic(let c1, let c2, let to) = seg {
-                XCTAssertLessThan(PathRefine.perpDist(c1, cur, to), 1e-6)
-                XCTAssertLessThan(PathRefine.perpDist(c2, cur, to), 1e-6)
-            }
-            cur = seg.endPoint
+        func segCount(_ s: Double) -> Int {
+            let o = RefineOptions(tolerance: 0.8, cornerAngle: 80, straighten: 0.0, smoothing: s)
+            return PathRefine.refine(pts, closed: false, options: o).segments.count
         }
+        let tight = segCount(0.0)
+        let full = segCount(1.0)
+        XCTAssertLessThan(full, tight, "full smoothing must emit fewer segments")
+        XCTAssertLessThanOrEqual(segCount(0.5), tight)
     }
 
     /// Reversing a refined path yields the same curve traversed backward

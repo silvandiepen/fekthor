@@ -36,7 +36,7 @@ public enum Fekthor {
         public var lineColor: RGB?
         public init(
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
-            simplicity: Double = 0.3, smoothing: Double = 1.0, straighten: Double = 0.5,
+            simplicity: Double = 0.3, smoothing: Double = 0.65, straighten: Double = 0.5,
             autoColors: Bool = true, autoColorMinFraction: Double = 0.004, flatten: Double = 0,
             strokeWidth: Double? = nil, uniformStrokeWidth: Bool = false,
             strokeSource: StrokeSource = .auto, strokeCap: LineCap = .round, taper: Bool = false,

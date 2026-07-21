@@ -42,7 +42,7 @@ public struct StrokesConfig {
         threshold: UInt8 = 128, epsilon: Double = 1.5, minLength: Int = 2,
         widthOverride: Double? = nil, uniformWidth: Bool = false,
         source: StrokeSource = .auto, colors: Int = 12,
-        smoothing: Double = 1.0, straighten: Double = 0.5, cap: LineCap = .round,
+        smoothing: Double = 0.65, straighten: Double = 0.5, cap: LineCap = .round,
         taper: Bool = false, lineColor: RGB? = nil
     ) {
         self.threshold = threshold
@@ -348,9 +348,19 @@ public enum StrokesMode {
             // chain before refinement.
             var dense = edge
             if !closed {
+                // Trim phantom through-stubs first: when a stroke ends ON a
+                // crossing line, thinning continues the path through the crossing
+                // line's own ink to its far edge (~one line-width of tail), and
+                // tangent-merging welds that stub on. Cut the tail back to the
+                // junction; genuine crossings continue far past it and are kept.
+                dense = trimJunctionStubs(
+                    dense, junctionDist: junctionDist, width: strokeWidth, w: w, h: h)
+                guard dense.count >= 2 else { continue }
+                let f2 = dense.first!
+                let l2 = dense.last!
                 dense = extendEndpoints(
-                    edge, mask: mask, skel: skel, width: strokeWidth, w: w, h: h,
-                    degStart: deg(first), degEnd: deg(last))
+                    dense, mask: mask, skel: skel, width: strokeWidth, w: w, h: h,
+                    degStart: deg(f2), degEnd: deg(l2))
             }
             let smoothed =
                 closed ? dense : Geometry.smoothPolyline(dense, window: 2, iterations: 2)
@@ -368,6 +378,56 @@ public enum StrokesMode {
         if config.uniformWidth && config.widthOverride == nil && !pendings.isEmpty {
             let med = median(pendings.map { $0.width })
             for i in pendings.indices { pendings[i].width = med }
+        }
+
+        // Overlap dedupe ("stitches"): junction merging can leave short leftover
+        // fragments that run on top of, or just beside, a longer stroke — they
+        // render as doubled dashes and knots on seams. Keep chains longest-first;
+        // drop a chain when most of its points lie within its own line width of
+        // already-kept geometry. Grid-hashed, deterministic order.
+        if pendings.count > 1 {
+            let order = pendings.indices.sorted {
+                let la = polyLen(pendings[$0].chain)
+                let lb = polyLen(pendings[$1].chain)
+                return la != lb ? la > lb : $0 < $1
+            }
+            let cell = 4.0
+            var grid: [Int: [Pt]] = [:]
+            @inline(__always) func key(_ x: Int, _ y: Int) -> Int { y &* 100_003 &+ x }
+            func addChain(_ pts: [Pt]) {
+                for p in pts {
+                    grid[key(Int(p.x / cell), Int(p.y / cell)), default: []].append(p)
+                }
+            }
+            func nearKept(_ p: Pt, _ r: Double) -> Bool {
+                let cx = Int(p.x / cell)
+                let cy = Int(p.y / cell)
+                let reach = Int(r / cell) + 1
+                for dy in -reach...reach {
+                    for dx in -reach...reach {
+                        guard let pts = grid[key(cx + dx, cy + dy)] else { continue }
+                        for q in pts where (q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y) <= r * r {
+                            return true
+                        }
+                    }
+                }
+                return false
+            }
+            var keep = [Bool](repeating: true, count: pendings.count)
+            for idx in order {
+                let p = pendings[idx]
+                let r = max(1.5, p.width * 0.9)
+                var near = 0
+                for pt in p.chain where nearKept(pt, r) { near += 1 }
+                let frac = Double(near) / Double(max(1, p.chain.count))
+                let isShort = polyLen(p.chain) < p.width * 3.0
+                if (isShort && frac >= 0.7) || frac >= 0.85 {
+                    keep[idx] = false
+                } else {
+                    addChain(p.chain)
+                }
+            }
+            pendings = pendings.indices.filter { keep[$0] }.map { pendings[$0] }
         }
 
         for p in pendings {
@@ -448,6 +508,48 @@ public enum StrokesMode {
         return max(1.0, median(src))
     }
 
+    /// Cut short phantom tails that continue past a junction (a stroke ending on
+    /// a crossing line skeletonises straight through its ink). If a chain end has
+    /// a junction pixel within ~1.6×width of arc-length behind it, and the tail
+    /// beyond that junction is that short, truncate at the junction point.
+    static func trimJunctionStubs(
+        _ chain: [Pt], junctionDist: [Double], width: Double, w: Int, h: Int
+    ) -> [Pt] {
+        var pts = chain
+        let maxTail = 1.6 * width
+        func junctionIndex(fromEnd reversed: Bool) -> Int? {
+            let idxs: [Int] = reversed ? Array(pts.indices.reversed()) : Array(pts.indices)
+            var arc = 0.0
+            var prev: Pt? = nil
+            for i in idxs {
+                let p = pts[i]
+                if let q = prev { arc += dist2D(p, q) }
+                prev = p
+                if arc > maxTail { return nil }
+                let xi = min(max(Int(p.x.rounded()), 0), w - 1)
+                let yi = min(max(Int(p.y.rounded()), 0), h - 1)
+                if junctionDist[yi * w + xi] < 1.2 {
+                    // Only a *stub* if there really are points beyond the junction.
+                    let beyond = reversed ? pts.count - 1 - i : i
+                    return beyond >= 2 ? i : nil
+                }
+            }
+            return nil
+        }
+        if let j = junctionIndex(fromEnd: true), j < pts.count - 1 {
+            pts.removeSubrange((j + 1)...)
+        }
+        if pts.count >= 4, let j = junctionIndex(fromEnd: false), j > 0 {
+            pts.removeSubrange(..<j)
+        }
+        return pts.count >= 4 ? pts : chain
+    }
+
+    @inline(__always)
+    static func dist2D(_ a: Pt, _ b: Pt) -> Double {
+        ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).squareRoot()
+    }
+
     /// Extend the open ends of a dense centreline chain. Each free tip (skeleton
     /// degree 1) is marched along its outgoing tangent: to the drawn visual tip
     /// while the foreground mask continues (≤1.5×width), and — closing a small gap
@@ -493,7 +595,11 @@ public enum StrokesMode {
                 }
                 d += 0.5
             }
-            let ext = max(tipD, firstTHit)
+            // A skeleton hit means the tangent runs into another stroke: stop AT
+            // its centreline. Marching further (the mask continues through that
+            // stroke's ink) would poke a stub out of its far side — the "ear
+            // attachment" overshoot. Only a true free tip uses the mask march.
+            let ext = firstTHit > 0 ? firstTHit : tipD
             return ext > 0.5 ? Pt(end.x + t.x * ext, end.y + t.y * ext) : nil
         }
         if degStart == 1 {

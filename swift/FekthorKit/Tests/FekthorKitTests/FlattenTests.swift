@@ -148,7 +148,7 @@ final class FlattenTests: XCTestCase {
             let r = try Fekthor.convert(
                 working, mode: .shapes, options: Fekthor.Options(colors: 16, flatten: flatten))
             XCTAssertGreaterThanOrEqual(
-                r.metrics.psnr, 30.0, "artist-flat at \(flatten) stays visually faithful (PSNR)")
+                r.metrics.psnr, 28.0, "artist-flat at \(flatten) stays visually faithful (PSNR; pin relaxed 30->28 with the 2026-07-21 Smoothing-semantics change: fewer, longer curves)")
             XCTAssertGreaterThanOrEqual(
                 r.metrics.exactPct, 90.0, "artist-flat at \(flatten) exact-match holds")
             XCTAssertLessThanOrEqual(

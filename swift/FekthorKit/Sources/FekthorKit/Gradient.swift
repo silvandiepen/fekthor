@@ -22,7 +22,7 @@ public struct GradientConfig {
     public init(
         colors: Int = 20, iters: Int = 8, epsilon: Double = 1.0, minArea: Double = 12.0,
         stops: Int = 6, autoColors: Bool = true, simplicity: Double = 0.15,
-        bandMerge: Double = 44, smoothing: Double = 1.0, straighten: Double = 0.5
+        bandMerge: Double = 44, smoothing: Double = 0.65, straighten: Double = 0.5
     ) {
         self.colors = colors
         self.iters = iters

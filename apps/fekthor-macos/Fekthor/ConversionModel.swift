@@ -21,7 +21,7 @@ final class ConversionModel: ObservableObject {
     /// Flatten strength (Shapes only): collapse shade families (same hue, different
     /// lightness) into flat colours. 0 = off (identical to the non-flatten pipeline).
     @Published var flatten: Double = 0
-    @Published var smoothing: Double = 1.0
+    @Published var smoothing: Double = 0.65
     /// Geometry-refinement straighten strength (0…1): near-straight runs collapse
     /// to single lines / axis-snapped primitives.
     @Published var straighten: Double = 0.5
