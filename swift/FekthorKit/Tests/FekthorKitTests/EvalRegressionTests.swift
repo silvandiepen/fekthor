@@ -12,7 +12,7 @@ final class EvalRegressionTests: XCTestCase {
     // counts 50–60% (a looser fit tolerance merges smooth runs into clean lines /
     // arcs / cubics instead of over-tracking pixel noise).
     private let floors: [(fixture: String, mode: Mode, floor: Double)] = [
-        ("artist-lineart", .strokes, 0.81),  // baseline 0.845 (was 0.832)
+        ("artist-lineart", .strokes, 0.815),  // baseline 0.845; plan 03 held fidelity 0.976→0.977
         ("artist-flat", .shapes, 0.69),  // baseline 0.726 (was 0.679)
         ("thor-flat", .shapes, 0.36),  // baseline 0.393 (was 0.396)
         ("artist-3d", .gradient, 0.45),  // baseline 0.483 (was 0.481)

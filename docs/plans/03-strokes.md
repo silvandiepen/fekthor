@@ -82,16 +82,53 @@ brush-tip fixtures faithfully without giving up stroke semantics elsewhere.
 
 ## Acceptance criteria
 
-- [ ] Synthetic: two crossing bars of width 6 and 12 → exactly 2 strokes with widths
-      6±0.7 and 12±0.7 (per-stroke width test).
-- [ ] Synthetic: an L-corner line keeps a sharp corner; a T-junction renders with no
+- [x] Synthetic: two crossing bars of width 6 and 12 → exactly 2 strokes with widths
+      6±0.7 and 12±0.7 (per-stroke width test). (`StrokePlan03Tests.testCrossingBarsPerStrokeWidth`.)
+- [x] Synthetic: an L-corner line keeps a sharp corner; a T-junction renders with no
       visible gap at 800% zoom (assert: rendered mask covers the junction pixel ±1).
-- [ ] `artist-lineart`: strokes ≤ 80, plan-01 strokes-fidelity ≥ baseline+0.03, and the
-      eyes remain filled primitives. Endpoints of the brush hairs reach the drawn tips
-      (visual check + endpoint-extension unit test).
-- [ ] Uniform-width toggle on → all strokes share the median width; manual slider still
-      overrides everything.
-- [ ] Determinism, tests, CI, eval floors raised.
+      (`StrokePlan03Tests.testLCornerStaysSharp` / `testTJunctionNoGap`.)
+- [x] `artist-lineart`: strokes ≤ 80 (68), strokes-fidelity ≥ 0.976 maintained (0.977;
+      see Attempts re: the baseline+0.03 adjustment), and the eyes remain filled
+      primitives. Endpoints reach the drawn tips (visual check + `testEndpointExtensionReachesTip`).
+- [x] Uniform-width toggle on → all strokes share the median width; manual slider still
+      overrides everything. (`StrokePlan03Tests.testUniformWidthAndOverride`.)
+- [x] Determinism (eval report.json byte-identical across processes), 39 tests, eval floor
+      raised (lineart→strokes 0.81 → 0.815).
+
+## Attempts / deviations
+
+- **`baseline+0.03` fidelity target adjusted.** The plan predates plan 02, which already
+  lifted lineart strokes fidelity to **0.976** (baseline was ~0.94 when plan 03 was
+  written). +0.03 on top would demand 1.006 — impossible. Per the master-plan rule
+  "goal and acceptance criteria win over the suggested number", the criterion is treated
+  as **fidelity ≥ 0.976 maintained AND the new features verified**. Plan 03 landed at
+  0.977 with per-stroke widths, endpoint extension and junctions, so fidelity improved.
+- **dt-based blob classifier (plan 03 §7 fix).** The old area/skeleton-length ratio was
+  the sole solid-blob signal and flipped between the `process` (1254px) and eval (1024px)
+  resamples, so the eyes sometimes traced as closed strokes instead of fills. The exact
+  EDT gives a resample-independent signal: a filled blob's inradius (max dt within a
+  component) far exceeds a stroke's half-width. Classifier now fires on
+  `maxDt ≥ max(2, 0.9×globalWidth)` **and** an area-ratio guard, keeping the old area
+  test as an OR fallback. Eyes classify as fills at both resamples.
+- **Junction snapping is automatic, not a post-fit reposition.** `SkeletonGraph.edges`
+  already anchors chain ends on the exact integer node pixel; `smoothPolyline` fixes
+  endpoints and `PathRefine` preserves the first/last anchor exactly, so a chain that
+  ends at a junction keeps that shared pixel with no explicit snap. The endpoint work
+  therefore only *extends* free tips (degree 1) and leaves junction ends (degree ≥ 3)
+  untouched — meeting strokes stay point-identical by construction.
+- **Endpoint extension and T-joint extension are one march on the dense chain**, before
+  refinement (the plan split them: tip on the dense chain, T-joint on the refined path).
+  Doing both as a single outgoing-tangent march (mask contiguity to the visual tip ≤1.5×w;
+  first skeleton hit for a T-joint gap ≤1.2×w; the farther point wins) is simpler,
+  deterministic and gives the same geometry — refinement then runs on the extended chain.
+- **L-corners stay two straight strokes, not one bent stroke.** A 90° turn exceeds
+  `mergeByTangent`'s `minCos: 0.3` (~72°) so the two arms never merge; they meet exactly
+  at the shared junction pixel, which keeps the corner sharp. The crossing test in
+  `StrokeTests` still holds (crossing continuations *are* near-straight and do merge).
+- **Junction exclusion for width sampling uses a second EDT** seeded on degree-≥3
+  skeleton pixels (cheap, O(n), not the shared foreground dt). A width sample is dropped
+  when its distance-to-junction is below `1.5×localWidth`, so inflated junction-blob dt
+  never skews the per-stroke median.
 
 ## Guardrails
 

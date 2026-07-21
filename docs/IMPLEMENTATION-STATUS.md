@@ -1,7 +1,7 @@
 # Implementation status
 
 Living summary of what is actually built, to complement the (aspirational) planning docs.
-Last updated 2026-07-21 (plan 02 — geometry refinement — complete).
+Last updated 2026-07-21 (plan 03 — Strokes mode — complete).
 
 ## Architecture
 
@@ -27,9 +27,14 @@ Conversion modes:
   Douglas-Peucker → Catmull-Rom smoothing. Flat fixture ≈ 96% exact / 38dB PSNR, ~1.8k nodes.
 - **Strokes** — auto-detects line art vs colour. Line art: foreground threshold → Zhang-Suen
   thinning → skeleton-graph tracing → **tangent-based edge merging** (a line crossing another
-  stays one stroke) → constant width (auto or fixed) → smoothed single centrelines (~hundreds of
-  nodes, not thousands). Colour images: **coloring-plate** mode — trace the shared boundaries
-  between colour regions once each into clean single outlines. Near-grey ink snaps to black.
+  stays one stroke) → **per-stroke width** (median of 2×dt from the exact Euclidean distance
+  transform, junctions excluded) → endpoint extension to visual tips + T-joint gap closing →
+  refined single centrelines (~hundreds of nodes). Solid blobs (eyes/dots) are classified by
+  dt inradius (resample-robust) and emitted as filled primitives. Colour images:
+  **coloring-plate** mode — trace shared boundaries once each into clean single outlines, with
+  parallel double-line suppression (grid-hash proximity). Options: Uniform width, Caps
+  (round/butt/square), opt-in Taper (narrowing tails → outline fills), Line-colour override.
+  Near-grey ink snaps to black.
 - **Gradient** — runs on the same gap-free planar map, fitting a multi-stop linear gradient per
   face (least-squares luminance axis + binned mean colours), exported as SVG `<linearGradient>`.
   3D fixture ≈ 30.7dB PSNR.
@@ -38,8 +43,10 @@ Key modules: `ColorQuantizer` (fixed + auto/AA-excluding), `ComponentMerge`, `Pl
 (faces + shared boundary chains + shared-chain refinement), `Skeleton` / `SkeletonGraph`
 (trace + merge), `GradientFit`, `Geometry` (Douglas-Peucker + polyline smoothing),
 `PathRefine` (typed segment fitting), `PrimitiveDetect` (circle/ellipse/rect), `CGPathBuilder`
-(shared CGPath source), `PathBuilder` (legacy Catmull-Rom fallback), `Rasterizer`
-(CoreGraphics render-back + scale), `Comparer`, `SVGExport`, `Document`, `Quality`.
+(shared CGPath source), `PathBuilder` (legacy Catmull-Rom fallback), `DistanceTransform`
+(exact Euclidean EDT, Felzenszwalb–Huttenlocher — stroke widths + spur pruning),
+`TaperBuilder` (opt-in tail outline fills), `Rasterizer` (CoreGraphics render-back + scale),
+`Comparer`, `SVGExport`, `Document`, `Quality`.
 
 ## Geometry refinement (plan 02)
 
@@ -86,7 +93,11 @@ non-determinism (per-process `Set`/`Dictionary` iteration order in `ComponentMer
 - **Smoothing** — curve strength (0 polygonal … 1 full; blends fitted cubics toward the chord).
 - **Straighten** — geometry-refinement strength (near-straight runs collapse to single lines).
 - **Lines from** (Strokes) — Auto / Centreline / Region edges.
-- **Line width** (Strokes) — Auto (estimated) or a fixed width for all lines.
+- **Line width** (Strokes) — Auto (per-stroke, dt-estimated) or a fixed width for all lines.
+- **Uniform width** (Strokes) — when Auto, force every stroke to the median width.
+- **Caps** (Strokes) — round / butt / square end caps (SVG + preview).
+- **Taper ends** (Strokes) — opt-in; narrowing brush tails become outline fills, body stays a stroke.
+- **Line colour** (Strokes) — override the sampled/black line colour (both sources).
 
 ## macOS app
 
@@ -95,15 +106,16 @@ inspector sidebar (controls + result metrics + processing loader), synchronized 
 comparison with click-drag and two-finger pan, pinch + button zoom (−/%/+/Fit), crisp
 high-resolution vector preview, and SVG export.
 
-## Quality (fixtures, 1024 working size, post plan 02)
+## Quality (fixtures, 1024 working size, post plan 03)
 
-Geometry refinement cut node counts 50–60% while holding or lifting fidelity:
+Geometry refinement cut node counts 50–60% while holding or lifting fidelity; plan 03 added
+stroke quality without regressing scores:
 
-- Shapes (artist-flat): overall 0.726 (was 0.679), ~500 nodes (was ~1.2k), gap-free, clean
-  lines/curves + `<rect>`s.
-- Strokes (artist-lineart): overall 0.845 (was 0.832), ~240 nodes; beret/head are single
-  smooth curves; blob eyes become `<ellipse>` primitives.
-- Gradient (artist-3d): overall 0.483 (≈ baseline 0.481) at ~2.5k nodes (was ~5.7k).
+- Shapes (artist-flat): overall 0.726, ~500 nodes, gap-free, clean lines/curves + `<rect>`s.
+- Strokes (artist-lineart): overall 0.845, fidelity 0.977 (was 0.976), 68 paths / ~240 nodes;
+  per-stroke widths, endpoints reach the drawn tips, junctions gap-free, blob eyes stay filled
+  primitives at both resamples. ~0.3s per conversion (budget 1.5s).
+- Gradient (artist-3d): overall 0.483 at ~2.5k nodes.
 - Preview == export verified against an independent SVG renderer (librsvg).
 
 ## Testing / CI
@@ -126,7 +138,6 @@ FEKTHOR-088…093 track them.
 
 ## Known gaps / next
 
-- Junction handling in Strokes still leaves small cap pile-ups at crossings.
 - Gradient node counts are high on photo-like inputs (band boundaries).
 - Bezier-native document (store curves, not just resampled points).
 - `.fekthor` project format, undo/redo, and region-level correction UI are not yet implemented.
