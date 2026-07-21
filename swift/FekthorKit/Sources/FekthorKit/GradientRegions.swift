@@ -14,50 +14,83 @@ import Foundation
 /// fidelity (the core ask of plan 05).
 public enum GradientRegions {
     /// Closed-form moments of one region. `add` forms a union's moments.
+    /// Besides the planar terms, `q = x² + y²` moments extend the colour model
+    /// to `C(x,y) ≈ a·x + b·y + d·q + e` — a radially symmetric paraboloid,
+    /// the moment-space twin of the radial gradients `GradientFit` paints. A
+    /// vignetted background or a shaded dome is quadratic, not planar; without
+    /// the q term its quantized rings never merge and render as banding.
     struct Moments {
         var n = 0.0
         var sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0, syy = 0.0
-        var sr = 0.0, srx = 0.0, sry = 0.0, srr = 0.0
-        var sg = 0.0, sgx = 0.0, sgy = 0.0, sgg = 0.0
-        var sb = 0.0, sbx = 0.0, sby = 0.0, sbb = 0.0
+        var sq = 0.0, sqx = 0.0, sqy = 0.0, sqq = 0.0
+        var sr = 0.0, srx = 0.0, sry = 0.0, srq = 0.0, srr = 0.0
+        var sg = 0.0, sgx = 0.0, sgy = 0.0, sgq = 0.0, sgg = 0.0
+        var sb = 0.0, sbx = 0.0, sby = 0.0, sbq = 0.0, sbb = 0.0
 
         @inline(__always) mutating func add(_ o: Moments) {
             n += o.n
             sx += o.sx; sy += o.sy; sxx += o.sxx; sxy += o.sxy; syy += o.syy
-            sr += o.sr; srx += o.srx; sry += o.sry; srr += o.srr
-            sg += o.sg; sgx += o.sgx; sgy += o.sgy; sgg += o.sgg
-            sb += o.sb; sbx += o.sbx; sby += o.sby; sbb += o.sbb
+            sq += o.sq; sqx += o.sqx; sqy += o.sqy; sqq += o.sqq
+            sr += o.sr; srx += o.srx; sry += o.sry; srq += o.srq; srr += o.srr
+            sg += o.sg; sgx += o.sgx; sgy += o.sgy; sgq += o.sgq; sgg += o.sgg
+            sb += o.sb; sbx += o.sbx; sby += o.sby; sbq += o.sbq; sbb += o.sbb
         }
     }
 
-    /// SSE of the least-squares plane fit for one channel, from moments only.
-    /// Uses centred normal equations (a stable 2×2 solve); falls back to the
+    /// SSE of the least-squares fit `c ≈ a·x + b·y + d·q + e` for one channel,
+    /// from moments only (centred 3×3 normal equations). Falls back to the
+    /// planar 2×2 solve when the q regressor is degenerate, then to the
     /// constant (mean-colour) fit when the region is collinear or tiny.
     @inline(__always)
     static func channelSSE(
-        _ n: Double, _ sx: Double, _ sy: Double, _ sxx: Double, _ sxy: Double, _ syy: Double,
-        _ sc: Double, _ scx: Double, _ scy: Double, _ scc: Double
+        _ m: Moments,
+        _ sc: Double, _ scx: Double, _ scy: Double, _ scq: Double, _ scc: Double,
+        quad: Bool
     ) -> Double {
+        let n = m.n
         if n < 1 { return 0 }
         let sccC = scc - sc * sc / n  // total centred sum of squares
         if n < 3 { return max(0, sccC) }
-        let sxxC = sxx - sx * sx / n
-        let sxyC = sxy - sx * sy / n
-        let syyC = syy - sy * sy / n
-        let det = sxxC * syyC - sxyC * sxyC
-        if abs(det) < 1e-6 { return max(0, sccC) }  // collinear → constant fit
-        let scxC = scx - sc * sx / n
-        let scyC = scy - sc * sy / n
-        let a = (scxC * syyC - scyC * sxyC) / det
-        let b = (sxxC * scyC - sxyC * scxC) / det
-        return max(0, sccC - (a * scxC + b * scyC))
+        let sxxC = m.sxx - m.sx * m.sx / n
+        let sxyC = m.sxy - m.sx * m.sy / n
+        let syyC = m.syy - m.sy * m.sy / n
+        let det2 = sxxC * syyC - sxyC * sxyC
+        if abs(det2) < 1e-6 { return max(0, sccC) }  // collinear → constant fit
+        let scxC = scx - sc * m.sx / n
+        let scyC = scy - sc * m.sy / n
+        let planar: Double = {
+            let a = (scxC * syyC - scyC * sxyC) / det2
+            let b = (sxxC * scyC - sxyC * scxC) / det2
+            return max(0, sccC - (a * scxC + b * scyC))
+        }()
+        if !quad || n < 5 { return planar }
+        let sqxC = m.sqx - m.sq * m.sx / n
+        let sqyC = m.sqy - m.sq * m.sy / n
+        let sqqC = m.sqq - m.sq * m.sq / n
+        // 3×3 determinant via cofactors of the symmetric normal matrix
+        // [sxxC sxyC sqxC; sxyC syyC sqyC; sqxC sqyC sqqC].
+        let c00 = syyC * sqqC - sqyC * sqyC
+        let c01 = sxyC * sqqC - sqyC * sqxC
+        let c02 = sxyC * sqyC - syyC * sqxC
+        let det3 = sxxC * c00 - sxyC * c01 + sqxC * c02
+        // Degenerate q regressor (e.g. thin ring where q is affine in x,y):
+        // scale-relative test so huge coordinate sums don't mask rank loss.
+        if abs(det3) < 1e-9 * max(1, abs(det2)) * max(1, sqqC) { return planar }
+        let scqC = scq - sc * m.sq / n
+        let m11 = sxxC * sqqC - sqxC * sqxC
+        let m12 = sxxC * sqyC - sxyC * sqxC
+        let a = (scxC * c00 - scyC * c01 + scqC * c02) / det3
+        let b = (-scxC * c01 + scyC * m11 - scqC * m12) / det3
+        let d = (scxC * c02 - scyC * m12 + scqC * det2) / det3
+        let quad = max(0, sccC - (a * scxC + b * scyC + d * scqC))
+        return min(planar, quad)
     }
 
     @inline(__always)
-    static func sse(_ m: Moments) -> Double {
-        channelSSE(m.n, m.sx, m.sy, m.sxx, m.sxy, m.syy, m.sr, m.srx, m.sry, m.srr)
-            + channelSSE(m.n, m.sx, m.sy, m.sxx, m.sxy, m.syy, m.sg, m.sgx, m.sgy, m.sgg)
-            + channelSSE(m.n, m.sx, m.sy, m.sxx, m.sxy, m.syy, m.sb, m.sbx, m.sby, m.sbb)
+    static func sse(_ m: Moments, quad: Bool) -> Double {
+        channelSSE(m, m.sr, m.srx, m.sry, m.srq, m.srr, quad: quad)
+            + channelSSE(m, m.sg, m.sgx, m.sgy, m.sgq, m.sgg, quad: quad)
+            + channelSSE(m, m.sb, m.sbx, m.sby, m.sbq, m.sbb, quad: quad)
     }
 
     /// Priority-queue entry: cost of merging roots `a<b`, tagged with the versions
@@ -146,12 +179,14 @@ public enum GradientRegions {
                     let o = p * 4
                     let xr = Double(x), yr = Double(y)
                     let r = Double(data[o]), g = Double(data[o + 1]), b = Double(data[o + 2])
+                    let q = xr * xr + yr * yr
                     m.n += 1
                     m.sx += xr; m.sy += yr
                     m.sxx += xr * xr; m.sxy += xr * yr; m.syy += yr * yr
-                    m.sr += r; m.srx += r * xr; m.sry += r * yr; m.srr += r * r
-                    m.sg += g; m.sgx += g * xr; m.sgy += g * yr; m.sgg += g * g
-                    m.sb += b; m.sbx += b * xr; m.sby += b * yr; m.sbb += b * b
+                    m.sq += q; m.sqx += q * xr; m.sqy += q * yr; m.sqq += q * q
+                    m.sr += r; m.srx += r * xr; m.sry += r * yr; m.srq += r * q; m.srr += r * r
+                    m.sg += g; m.sgx += g * xr; m.sgy += g * yr; m.sgq += g * q; m.sgg += g * g
+                    m.sb += b; m.sbx += b * xr; m.sby += b * yr; m.sbq += b * q; m.sbb += b * b
                     if x == 0 || y == 0 || x == w - 1 || y == h - 1 { bord = true }
                     if x > 0, comp[p - 1] < 0, indices[p - 1] == target {
                         comp[p - 1] = id
@@ -277,7 +312,12 @@ public enum GradientRegions {
             }
             var u = moments[a]
             u.add(moments[b])
-            let raw = sse(u) - sse(moments[a]) - sse(moments[b])
+            // The radial-quadratic model is reserved for border-touching pairs
+            // (vignetted backgrounds — its motivation): on interior pairs the
+            // paraboloid can bend to swallow a distinct neighbour (hair strands
+            // absorbed into the face's shading).
+            let quad = border[a] && border[b]
+            let raw = sse(u, quad: quad) - sse(moments[a], quad: quad) - sse(moments[b], quad: quad)
             var c = raw / max(1, min(moments[a].n, moments[b].n))
             if border[a] && border[b] { c *= borderBias }
             return c

@@ -90,31 +90,74 @@ public enum GradientFit {
     /// gradient; keeps solid when the best gradient barely beats the mean colour
     /// (plan 05 §2). Pixels are scanned once here — this runs per *final* region,
     /// never inside the merge loop.
+    /// `colorRef`, when given, debiases the fitted colours: the fit runs on
+    /// `img` (typically texture-flattened, whose Kuwahara means drift bright),
+    /// then every stop is shifted by the region's mean-colour delta between
+    /// `colorRef` (the original pixels) and `img` — structure from the clean
+    /// signal, average colour from the truth.
     public static func fitRegion(
-        img: RasterImage, labels: [Int], label idx: Int, bbox: (Int, Int, Int, Int),
-        fallback: RGB, stops stopCount: Int = 6
+        img: RasterImage, colorRef: RasterImage? = nil, labels: [Int], label idx: Int,
+        bbox: (Int, Int, Int, Int), fallback: RGB, stops stopCount: Int = 6
     ) -> Paint {
         let w = img.width
         let h = img.height
-        let solidFallback = Paint.solid([fallback.r, fallback.g, fallback.b])
 
         let minx = max(0, bbox.0), miny = max(0, bbox.1)
         let maxx = min(w - 1, bbox.2), maxy = min(h - 1, bbox.3)
-        if maxx < minx || maxy < miny { return solidFallback }
 
         var px: [Double] = [], py: [Double] = []
         var pr: [Double] = [], pg: [Double] = [], pb: [Double] = [], pl: [Double] = []
-        for y in miny...maxy {
-            let row = y * w
-            for x in minx...maxx where labels[row + x] == idx {
-                let p = img.pixel(x, y)
-                let r = Double(p.0), g = Double(p.1), b = Double(p.2)
-                px.append(Double(x)); py.append(Double(y))
-                pr.append(r); pg.append(g); pb.append(b)
-                pl.append(0.299 * r + 0.587 * g + 0.114 * b)
+        var refR = 0.0, refG = 0.0, refB = 0.0
+        if maxx >= minx, maxy >= miny {
+            for y in miny...maxy {
+                let row = y * w
+                for x in minx...maxx where labels[row + x] == idx {
+                    let p = img.pixel(x, y)
+                    let r = Double(p.0), g = Double(p.1), b = Double(p.2)
+                    px.append(Double(x)); py.append(Double(y))
+                    pr.append(r); pg.append(g); pb.append(b)
+                    pl.append(0.299 * r + 0.587 * g + 0.114 * b)
+                    if let ref = colorRef {
+                        let q = ref.pixel(x, y)
+                        refR += Double(q.0); refG += Double(q.1); refB += Double(q.2)
+                    }
+                }
             }
         }
         let n = px.count
+        // Mean-shift debias applied to every returned paint (identity without
+        // colorRef). Computed against the fitted pixels' own mean below.
+        var shiftR = 0.0, shiftG = 0.0, shiftB = 0.0
+        @inline(__always) func debias(_ c: RGB) -> RGB {
+            (
+                UInt8(min(255, max(0, (Double(c.r) + shiftR).rounded()))),
+                UInt8(min(255, max(0, (Double(c.g) + shiftG).rounded()))),
+                UInt8(min(255, max(0, (Double(c.b) + shiftB).rounded())))
+            )
+        }
+        func debiasPaint(_ p: Paint) -> Paint {
+            if shiftR == 0 && shiftG == 0 && shiftB == 0 { return p }
+            switch p {
+            case .solid(let c):
+                let d = debias((c[0], c[1], c[2]))
+                return .solid([d.0, d.1, d.2])
+            case .linear(var lg):
+                lg.stops = lg.stops.map {
+                    GradientStop(
+                        color: debias(($0.color[0], $0.color[1], $0.color[2])),
+                        offset: $0.offset)
+                }
+                return .linear(lg)
+            case .radial(var rg):
+                rg.stops = rg.stops.map {
+                    GradientStop(
+                        color: debias(($0.color[0], $0.color[1], $0.color[2])),
+                        offset: $0.offset)
+                }
+                return .radial(rg)
+            }
+        }
+        let solidFallback = Paint.solid([fallback.r, fallback.g, fallback.b])
         if n < 24 { return solidFallback }
         let k = max(2, stopCount)
         let nn = Double(n)
@@ -123,6 +166,11 @@ public enum GradientFit {
         var mr = 0.0, mg = 0.0, mb = 0.0
         for i in 0..<n { mr += pr[i]; mg += pg[i]; mb += pb[i] }
         mr /= nn; mg /= nn; mb /= nn
+        if colorRef != nil {
+            shiftR = refR / nn - mr
+            shiftG = refG / nn - mg
+            shiftB = refB / nn - mb
+        }
         var solidSSE = 0.0
         for i in 0..<n {
             let dr = pr[i] - mr, dg = pg[i] - mg, db = pb[i] - mb
@@ -234,9 +282,9 @@ public enum GradientFit {
         var best: (Paint, Double)? = nil
         if let l = linear { best = l }
         if let r = radial, best == nil || r.1 < best!.1 { best = r }
-        guard let (paint, rmse) = best else { return solidFallback }
+        guard let (paint, rmse) = best else { return debiasPaint(solidFallback) }
         // Flat regions stay flat: only keep a gradient that clearly beats solid.
-        if rmse * 0.985 >= solidRMSE { return solidFallback }
-        return paint
+        if rmse * 0.985 >= solidRMSE { return debiasPaint(solidFallback) }
+        return debiasPaint(paint)
     }
 }

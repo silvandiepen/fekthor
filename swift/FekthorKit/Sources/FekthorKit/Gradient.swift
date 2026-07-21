@@ -41,7 +41,34 @@ public enum GradientMode {
     /// The moment-merged region segmentation for one image + config. Shared by
     /// `run` and the plan-05 tests (background-single-region, blend monotonicity)
     /// so those assertions exercise the real parameters, never a copy that drifts.
+    /// Micro-texture (fabric weave, hair strands, render noise) quantizes into
+    /// speckle blobs that fragment the region map. Kuwahara-flatten it into the
+    /// shading it decorates before quantizing — painterly local means, crisp
+    /// object boundaries. Radius tracks image size so the texture scale cut-off
+    /// is resolution-independent, and the pass count adapts to measured texture
+    /// density: smooth digital paintings (≈0.03) are left untouched — Kuwahara
+    /// would only posterise them — while strand/fabric-textured renders (≈0.18)
+    /// need two passes to finish off what one pass only thins.
+    static func smoothed(_ img: RasterImage) -> RasterImage {
+        smoothed(img, texture: Preprocess.textureFraction(img))
+    }
+
+    static func smoothed(_ img: RasterImage, texture: Double) -> RasterImage {
+        if texture < 0.06 { return img }
+        let radius = max(2, min(img.width, img.height) / 256)
+        let once = Preprocess.kuwahara(img, radius: radius)
+        return texture < 0.12 ? once : Preprocess.kuwahara(once, radius: radius)
+    }
+
     static func segment(_ img: RasterImage, config: GradientConfig)
+        -> (labels: [Int], colors: [RGB])
+    {
+        segmentSmoothed(smoothed(img), config: config)
+    }
+
+    /// `img` must already be de-textured (`smoothed`) — `run` passes the same
+    /// smoothed image here and to the gradient fitter so they never disagree.
+    static func segmentSmoothed(_ img: RasterImage, config: GradientConfig)
         -> (labels: [Int], colors: [RGB])
     {
         let q =
@@ -71,8 +98,14 @@ public enum GradientMode {
         -> VectorDocument
     {
         // Trace the merged regions via the shared-edge planar map (gap-free) and
-        // fit a gradient per face.
-        let (labels, colors) = segment(img, config: config)
+        // fit a gradient per face. Segmentation and fitting read the flattened
+        // image — directional texture (strands, weave) tilts the fitter's
+        // least-squares axis, so raw pixels fit worse — and each region's
+        // colours are then mean-shift debiased against the original, cancelling
+        // the Kuwahara means' bright drift.
+        let texture = Preprocess.textureFraction(img)
+        let flattened = smoothed(img, texture: texture)
+        let (labels, colors) = segmentSmoothed(flattened, config: config)
         let refineOpt = RefineOptions(
             tolerance: config.epsilon * 1.8, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
@@ -94,7 +127,8 @@ public enum GradientMode {
             }
             let fallback = face.label < colors.count ? colors[face.label] : (0, 0, 0)
             let paint = GradientFit.fitRegion(
-                img: img, labels: labels, label: face.label,
+                img: flattened, colorRef: texture < 0.06 ? nil : img,
+                labels: labels, label: face.label,
                 bbox: (minx, miny, maxx, maxy), fallback: fallback, stops: config.stops)
             // Refined region boundaries; gradient regions are blobby, so no
             // whole-shape primitive substitution here.
