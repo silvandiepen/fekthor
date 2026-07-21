@@ -80,6 +80,10 @@ Execute in this order — each later plan depends on the earlier ones:
 5. **[05 — Gradient mode](05-gradient.md)** (minimal regions, radial gradients,
    colour-aware axes, background detection)
 6. **[06 — Auto mode](06-auto-mode.md)** (image classifier + low-res trial scoring, UI)
+7. **[07 — Flatten](07-flatten.md)** (hue-aware colour reduction: shaded sources collapse
+   into flat art — same shapes, fewer colours; reference pair
+   `fixtures/inputs/thor-3d.png` → `fixtures/references/thor-3d-flattened.png`. Can run
+   any time after 01; natural slot after 04.)
 
 ## Global invariants — every plan MUST preserve these
 
@@ -104,15 +108,92 @@ These are hard gates. A change that violates one is wrong even if it looks bette
    re-convert on change, following the existing pattern in
    `apps/fekthor-macos/Fekthor/{ConversionModel,ContentView}.swift`.
 
-## Working agreement for the implementer
+## Methods & instructions for implementing agents
 
-- Small conventional commits per feature (`feat(engine): …`, `fix(macos): …`), everything on
-  `main`, push after each green build. **Never** include a `Co-Authored-By` trailer.
-- After each plan: update `docs/IMPLEMENTATION-STATUS.md`, and move/add cards on the shared
-  board at `/Users/silvandiepen/Projects/Tasks/Fekthor/` (contract in `Tasks/README.md`;
-  cards FEKTHOR-088…093 correspond to plans 01…06).
-- Validate visually as well as numerically: convert the five fixtures, render side-by-side
-  (`magick src.png render.png +append cmp.png`), and *look at the result* before declaring
-  a plan done. The bar is "a designer would accept this SVG", not just the metrics.
-- When a plan's approach fails on real fixtures, record what was tried in the plan doc and
-  adjust — do not silently ship a regression.
+These plans will be executed by different agents/models. Follow this playbook exactly —
+it encodes how this repo is worked on. Do not improvise around it.
+
+### Environment & commands (macOS, Apple Silicon, Xcode 16+)
+
+```bash
+# Engine: build (release — engine is also -O in debug, see Package.swift)
+swift build --package-path swift/FekthorKit -c release
+# Engine: tests (the gate for every commit)
+swift test --package-path swift/FekthorKit
+# CLI: convert one image (binary lands in swift/FekthorKit/.build/release/fekthor)
+swift/FekthorKit/.build/release/fekthor process fixtures/inputs/artist-flat.png \
+  --mode shapes --out /tmp/o     # also: strokes | gradient; see main.swift for flags
+# Evaluation harness (exists after plan 01):
+swift/FekthorKit/.build/release/fekthor eval
+# macOS app: generate project + build (CODE_SIGNING_ALLOWED=NO for CI/local checks)
+cd apps/fekthor-macos && xcodegen generate && \
+  xcodebuild -project Fekthor.xcodeproj -scheme Fekthor -configuration Debug \
+  -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+# Launch the built app for manual testing (optionally pass an image path to auto-load)
+open ~/Library/Developer/Xcode/DerivedData/Fekthor-*/Build/Products/Debug/Fekthor.app
+```
+
+### The verification loop (run after every algorithm change)
+
+1. `swift test` — must be green before any commit.
+2. Convert **all five fixtures** with the affected mode(s) via the CLI.
+3. Build a side-by-side and **look at it** — this step is not optional; numbers lie:
+   ```bash
+   magick fixtures/inputs/artist-flat.png -resize 320x320 /tmp/s.png
+   magick /tmp/o/render.png -resize 320x320 /tmp/r.png
+   magick /tmp/s.png /tmp/r.png +append /tmp/cmp.png   # then view /tmp/cmp.png
+   ```
+   Inspect at 100% *and* zoomed (crop a junction/boundary region with `magick -crop`).
+   The bar is "a designer would accept this SVG", not just metric floors.
+4. Check the numbers: node/path counts and (post-plan-01) `fekthor eval` scores vs the
+   committed floors. Both visual and numeric checks must pass.
+5. Open the exported `vector.svg` in a browser once per plan — the CoreGraphics
+   rasterizer and real SVG renderers must agree (they share geometry by design; verify).
+
+### Repo & git rules
+
+- Everything happens on `main`; push after every green, self-contained commit.
+- Conventional commits: `feat(engine): …`, `fix(macos): …`, `perf: …`, `test: …`,
+  `docs: …`. Small commits — one feature/fix each, never a mixed mega-commit.
+- **Never add a `Co-Authored-By` or any AI attribution trailer** (house rule).
+- Never commit with failing tests; never delete/weaken a failing test to pass — fix the
+  cause or (only for intentional behaviour changes) adjust the test *with justification
+  in the commit message*.
+- CI (`.github/workflows/ci.yml`) must be green after each push; check it
+  (`gh run list --repo silvandiepen/fekthor --limit 1`) and fix breaks immediately.
+
+### Code rules (match the existing codebase style)
+
+- Swift only, no new dependencies without explicit owner approval (SwiftPM deps: none).
+- Determinism everywhere: no `Dictionary` iteration into output ordering, no randomness,
+  stable sorts with explicit tie-breakers. If you touch ordering, add a determinism test
+  (convert twice, byte-compare SVG).
+- Per-pixel loops must stay O(n) or O(n log n); precompute moments/transforms rather than
+  re-scanning pixels in inner loops (see `ComponentMerge`, plan 05 for the pattern).
+- Public API changes go through `Fekthor.Options` / `Fekthor.Result`; the app reads only
+  those. Every new option gets an inspector control (pattern:
+  `apps/fekthor-macos/Fekthor/ConversionModel.swift` + `ContentView.swift` sliders) that
+  re-converts on change.
+- Comments explain *why* (invariants, tolerances), not *what*. British spelling in docs.
+
+### Board & docs upkeep (required, not optional)
+
+- The shared kanban lives at `/Users/silvandiepen/Projects/Tasks/Fekthor/` (contract:
+  `../README.md` there). Cards FEKTHOR-088…094 map to plans 01…07 and are
+  dependency-chained; move a card `1. To do` → `2. In Progress` when starting (fill
+  `picked_up_by/at`, append an Activity-log line) and → `5. Done` when its plan's
+  acceptance boxes are all ticked (fill `completed_by/at`). Lane folder and `status:`
+  frontmatter must agree. A sync daemon commits the board — just edit the files.
+- After each plan: update `docs/IMPLEMENTATION-STATUS.md` (it is the living truth of
+  what's built), tick the plan doc's acceptance checkboxes, and raise the eval floors.
+
+### When things don't work
+
+- If an approach fails on real fixtures, write what was tried and why it failed into the
+  plan doc (a short "Attempts" section), then adjust the approach. Do not silently ship
+  a regression, and do not grind >2h on one dead end without recording it.
+- If a plan conflicts with observed reality (thresholds wrong, algorithm unsuitable),
+  the *goal and acceptance criteria* win over the suggested algorithm — pick a better
+  method, document the deviation in the plan doc, and keep the guardrails.
+- Anything requiring a product decision (new UI concept, dropping a requirement,
+  breaking the SVG contract) is the owner's call — stop and ask rather than assume.
