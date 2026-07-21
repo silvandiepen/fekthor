@@ -114,7 +114,9 @@ public enum Fekthor {
             doc = GradientMode.run(
                 img,
                 config: GradientConfig(
-                    colors: 64, epsilon: max(2.0, options.epsilon),
+                    // Gradient regions are blobby shaded areas; a coarser boundary
+                    // tolerance floor keeps the paths clean without costing fidelity.
+                    colors: 64, epsilon: max(1.5, options.epsilon),
                     minArea: options.minArea, stops: 8,
                     // Fine fixed oversegmentation (a smooth gradient has no flat
                     // colours to auto-detect); moment-based agglomeration, driven by
