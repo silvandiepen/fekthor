@@ -55,6 +55,12 @@ final class ConversionModel: ObservableObject {
     private var simplePalette: Bool = false
     @Published var status: String = "Drop, open or paste an image."
     @Published var isBusy = false
+    /// Node editing (V1): when on, the vector pane becomes an editable canvas.
+    @Published var editMode = false
+    /// The current vector document (kept for editing and re-export). Bumped
+    /// via editGeneration so the edit canvas invalidates on each change.
+    var document: VectorDocument?
+    @Published var editGeneration = 0
     @Published var imageGeneration = 0
 
     // Structured result, shown in the inspector.
@@ -280,6 +286,7 @@ final class ConversionModel: ObservableObject {
                 let m = result.metrics
                 let overall = result.quality.overall
                 let svg = result.svg
+                let document = result.document
                 let kb = svg.utf8.count / 1024
                 let resolvedMode = result.resolvedMode
                 await MainActor.run {
@@ -288,6 +295,8 @@ final class ConversionModel: ObservableObject {
                         self.vectorImage = NSImage(cgImage: cg, size: NSSize(width: w, height: h))
                     }
                     self.svg = svg
+                    self.document = document
+                    self.editGeneration += 1
                     self.hasResult = true
                     self.overallQuality = overall
                     self.exactPct = m.exactPct
@@ -326,6 +335,45 @@ final class ConversionModel: ObservableObject {
     }
 
     // MARK: Export / drop
+
+    // MARK: Node editing
+
+    /// Move one anchor of one element; the edit canvas redraws immediately and
+    /// the SVG/preview refresh when editing ends.
+    func moveAnchor(element: Int, path: Int, anchor: Int, to: Pt) {
+        guard var doc = document, element < doc.elements.count else { return }
+        doc.elements[element] = Editing.move(
+            doc.elements[element], path: path, anchor: anchor, to: to)
+        document = doc
+        editGeneration += 1
+    }
+
+    /// Leaving edit mode: regenerate the SVG and the raster preview from the
+    /// (possibly edited) document so every surface agrees again.
+    func finishEditing() {
+        editMode = false
+        guard let doc = document, let working = workingImage else { return }
+        let smoothing = self.smoothing
+        status = "Edited · updating preview…"
+        Task.detached(priority: .userInitiated) {
+            let svg = SVGExport.toSVG(doc, smoothing: smoothing)
+            let displayScale = max(1.0, 2048.0 / Double(max(working.width, working.height)))
+            let preview = Rasterizer.render(doc, smoothing: smoothing, scale: displayScale)
+            let cg = preview.cgImage()
+            let w = preview.width
+            let h = preview.height
+            let nodes = doc.nodeCount
+            await MainActor.run {
+                if let cg {
+                    self.vectorImage = NSImage(cgImage: cg, size: NSSize(width: w, height: h))
+                }
+                self.svg = svg
+                self.svgKB = svg.utf8.count / 1024
+                self.nodes = nodes
+                self.status = "Edited"
+            }
+        }
+    }
 
     func exportSVG() {
         guard !svg.isEmpty else { return }

@@ -15,9 +15,13 @@ struct ContentView: View {
                     EmptyStateView(model: model)
                 } else {
                     VStack(spacing: 0) {
-                        ComparisonView(
-                            source: model.sourceImage, vector: model.vectorImage,
-                            busy: model.isBusy, zoom: $zoom, offset: $offset)
+                        if model.editMode {
+                            EditCanvasView(model: model, zoom: $zoom, offset: $offset)
+                        } else {
+                            ComparisonView(
+                                source: model.sourceImage, vector: model.vectorImage,
+                                busy: model.isBusy, zoom: $zoom, offset: $offset)
+                        }
                         Divider()
                         statusBar
                     }
@@ -51,6 +55,20 @@ struct ContentView: View {
                     offset = .zero
                 } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
             }
+            Button {
+                if model.editMode {
+                    model.finishEditing()
+                } else {
+                    model.editMode = true
+                    model.status = "Editing — click a shape, drag its points."
+                }
+            } label: {
+                Label(
+                    model.editMode ? "Done" : "Edit nodes",
+                    systemImage: model.editMode
+                        ? "checkmark.circle" : "point.topleft.down.to.point.bottomright.curvepath")
+            }
+            .disabled(!model.hasResult)
             Button { model.exportSVG() } label: {
                 Label("Export SVG", systemImage: "square.and.arrow.up")
             }
