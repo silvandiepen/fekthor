@@ -2,6 +2,8 @@ import Foundation
 
 /// A conversion mode. Each reconstructs different drawing semantics.
 public enum Mode: String, Codable, Sendable, CaseIterable {
+    /// Automatically resolves to Shapes, Strokes or Gradient from raster features.
+    case auto
     /// Flat filled shapes, no strokes (colour-region tracing).
     case shapes
     /// Centreline strokes for line art (skeleton reconstruction).

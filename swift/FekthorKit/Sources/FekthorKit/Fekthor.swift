@@ -68,6 +68,8 @@ public enum Fekthor {
         public var metrics: Metrics
         /// Mode-aware quality score (see `Quality`). Comparable across modes.
         public var quality: QualityScore
+        /// The concrete mode used for conversion. For non-Auto calls this equals `mode`.
+        public var resolvedMode: Mode
         /// Conversion diagnostics that are not part of the quality formula.
         public var detail: [String: Double]
     }
@@ -86,9 +88,27 @@ public enum Fekthor {
     public static func convert(_ img: RasterImage, mode: Mode, options: Options = Options()) throws
         -> Result
     {
+        if mode == .auto {
+            let detection = AutoMode.detect(img, options: options)
+            var result = try convertConcrete(img, mode: detection.resolved, options: options)
+            result.detail["auto.confidence"] = detection.confidence
+            for (key, value) in detection.features {
+                result.detail["auto.\(key)"] = value
+            }
+            result.resolvedMode = detection.resolved
+            return result
+        }
+        return try convertConcrete(img, mode: mode, options: options)
+    }
+
+    static func convertConcrete(_ img: RasterImage, mode: Mode, options: Options = Options()) throws
+        -> Result
+    {
         let doc: VectorDocument
         var conversionDetail: [String: Double] = [:]
         switch mode {
+        case .auto:
+            throw EngineError.unsupported("Auto must resolve before concrete conversion")
         case .shapes:
             let output = ShapesMode.runWithDetail(
                 img,
@@ -131,6 +151,6 @@ public enum Fekthor {
             source: img, document: doc, rendered: rendered, mode: mode)
         return Result(
             document: doc, svg: svg, rendered: rendered, metrics: metrics, quality: quality,
-            detail: conversionDetail)
+            resolvedMode: mode, detail: conversionDetail)
     }
 }

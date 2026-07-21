@@ -37,6 +37,8 @@ public enum Quality {
         var detail: [String: Double] = [:]
         let fidelity: Double
         switch mode {
+        case .auto:
+            fidelity = shapesFidelity(source, rendered, &detail)
         case .shapes: fidelity = shapesFidelity(source, rendered, &detail)
         case .strokes: fidelity = strokesFidelity(source, rendered, &detail)
         case .gradient: fidelity = gradientFidelity(source, rendered, &detail)
