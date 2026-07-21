@@ -83,11 +83,13 @@ public enum ColorQuantizer {
     ) -> Quantized {
         struct Bucket {
             var count = 0
+            var edgeCount = 0
             var sum = (0, 0, 0)
             var exact: [Int: Int] = [:]
 
-            mutating func add(_ r: Int, _ g: Int, _ b: Int) {
+            mutating func add(_ r: Int, _ g: Int, _ b: Int, onEdge: Bool) {
                 count += 1
+                if onEdge { edgeCount += 1 }
                 sum.0 += r
                 sum.1 += g
                 sum.2 += b
@@ -131,18 +133,27 @@ public enum ColorQuantizer {
         }
 
         let n = img.width * img.height
+        // Spatial AA signal: anti-aliasing hugs strong luminance edges, while a
+        // painted soft shadow — colourimetrically the same blend — forms blobs
+        // away from them. Only meaningful on real 2D images (the alpha path
+        // repacks opaque pixels into one row, destroying adjacency).
+        let nearEdge = img.height >= 8 ? nearEdgeMap(img) : nil
         var hist: [Int: Bucket] = [:]
         for i in 0..<n {
             let o = i * 4
             let r = Int(img.data[o]), g = Int(img.data[o + 1]), b = Int(img.data[o + 2])
             let key = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3)
             var e = hist[key] ?? Bucket()
-            e.add(r, g, b)
+            e.add(r, g, b, onEdge: nearEdge?[i] ?? true)
             hist[key] = e
         }
-        var buckets: [(count: Int, color: RGB, mean: RGB, exact: Bool)] = hist.values.map { v in
-            let rep = v.representative(exactPalette: exactPalette)
-            return (v.count, rep.color, v.mean, rep.exact)
+        var buckets: [(count: Int, color: RGB, mean: RGB, exact: Bool, edgeFraction: Double)] =
+            hist.values.map { v in
+                let rep = v.representative(exactPalette: exactPalette)
+                return (
+                    v.count, rep.color, v.mean, rep.exact,
+                    Double(v.edgeCount) / Double(max(1, v.count))
+                )
         }
         buckets.sort {
             if $0.count != $1.count { return $0.count > $1.count }
@@ -168,18 +179,64 @@ public enum ColorQuantizer {
         if exactPalette { selected = pruneBlendPalette(selected) }
         // Pass 2: keep smaller *distinct* feature colours (e.g. tiny black eyes)
         // but drop true anti-aliasing — colours that lie on the blend line
-        // between two palette colours.
+        // between two palette colours. Painted soft shadows sit on that same
+        // blend line; the spatial signal separates them — a bucket whose pixels
+        // mostly sit away from strong edges is a real feature, not AA.
         let noiseFloor = max(1, minCount / 12)
         for b in buckets {
             if selected.count >= maxColors { break }
             if b.count >= minCount || b.count < noiseFloor { continue }
             if !selectedColors().allSatisfy({ dist2($0, b.color) >= minSep2 }) { continue }
-            if isBlend(b.mean, selectedColors()) { continue }
+            if b.edgeFraction > 0.5, isBlend(b.mean, selectedColors()) { continue }
             selected.append((b.color, b.exact))
         }
         let palette = selectedColors()
         let exactCount = selected.filter(\.exact).count
         return assign(img, palette: palette, paletteExactCount: exactCount)
+    }
+
+    /// Pixels on or adjacent to a strong colour step — where AA lives. Uses the
+    /// max per-channel delta so pure-chroma edges (e.g. red↔blue) count too.
+    static func nearEdgeMap(_ img: RasterImage) -> [Bool] {
+        let w = img.width, h = img.height
+        let n = w * h
+        @inline(__always) func delta(_ i: Int, _ j: Int) -> Int {
+            let a = i * 4, b = j * 4
+            return max(
+                abs(Int(img.data[a]) - Int(img.data[b])),
+                max(
+                    abs(Int(img.data[a + 1]) - Int(img.data[b + 1])),
+                    abs(Int(img.data[a + 2]) - Int(img.data[b + 2]))))
+        }
+        var edge = [Bool](repeating: false, count: n)
+        for y in 0..<h {
+            let row = y * w
+            for x in 0..<w {
+                let i = row + x
+                if x + 1 < w, delta(i, i + 1) > 40 {
+                    edge[i] = true
+                    edge[i + 1] = true
+                }
+                if y + 1 < h, delta(i, i + w) > 40 {
+                    edge[i] = true
+                    edge[i + w] = true
+                }
+            }
+        }
+        // Dilate by one so both AA rings around a step count as near-edge.
+        var near = edge
+        for y in 0..<h {
+            let row = y * w
+            for x in 0..<w where !near[row + x] {
+                let i = row + x
+                if (x > 0 && edge[i - 1]) || (x + 1 < w && edge[i + 1])
+                    || (y > 0 && edge[i - w]) || (y + 1 < h && edge[i + w])
+                {
+                    near[i] = true
+                }
+            }
+        }
+        return near
     }
 
     static func pruneBlendPalette(_ selected: [(color: RGB, exact: Bool)])

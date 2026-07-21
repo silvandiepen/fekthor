@@ -46,8 +46,10 @@ public enum AutoMode {
     // artist-flat: compact flat illustrations may quantize to six palette entries
     // and lower measured coverage after antialiasing, but remain low-palette sources.
     private static let lowPaletteFlatCoverageMin = 0.75
-    // artist-flat: excludes artist-3d while keeping the flat illustration in Stage A.
-    private static let flatPaletteMax = 6.5
+    // artist-flat: excludes artist-3d while keeping the flat illustration in
+    // Stage A (its soft-shadow tone survives AA pruning, so it counts 7 colours;
+    // artist-3d stays out via the coverage bound below).
+    private static let flatPaletteMax = 7.5
     // artist-3d: shaded artwork may still have moderate flat coverage, so gradient
     // Stage A is limited to sources below this coverage unless edge-flat wins first.
     private static let gradientFlatCoverageMax = 0.75
