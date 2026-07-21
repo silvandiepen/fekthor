@@ -1,7 +1,7 @@
 # Implementation status
 
 Living summary of what is actually built, to complement the (aspirational) planning docs.
-Last updated 2026-07-21 (plan 04 — Shapes mode & logo preset — complete).
+Last updated 2026-07-21 (plans 01–07 — quality plan set complete).
 
 ## Architecture
 
@@ -13,7 +13,8 @@ Native Swift monorepo (see revised D-004):
 - `fixtures/inputs/` — sample images.
 
 Build: `npm run engine:build` / `engine:test`, `npm run macos:build`. CLI:
-`fekthor process <image> --mode shapes|strokes|gradient [--colors N] [--epsilon E] [--out DIR]`.
+`fekthor process <image> [--mode auto|shapes|strokes|gradient] [--colors N] [--epsilon E] [--out DIR]`;
+`auto` is the default.
 
 ## Engine (FekthorKit)
 
@@ -23,6 +24,16 @@ old Vision contour tracer has been removed.
 
 Conversion modes:
 
+- **Auto** (plan 06, default) — runs a deterministic 256px Stage-A feature classifier
+  (`greyness`, `paletteCount`, `flatCoverage`, `gradientEnergy`, `inkFraction`,
+  `edgeDensity`) to resolve to Strokes / Shapes / Gradient, with all thresholds named and
+  fixture-commented in `AutoMode.swift`. If Stage A is unsure, Stage B runs all three
+  concrete modes on the 256px thumbnail, scores them with the unchanged plan-01
+  `Quality.score`, and picks the highest `overall`. `Fekthor.Result.resolvedMode` records
+  the concrete mode; CLI output prints `mode=auto→…`, `metrics.json` includes
+  `resolvedMode`, and eval adds Auto rows with `expectedResolvedMode` / `resolvedModeOK`.
+  The macOS app defaults to Auto, shows "Detected: …", displays the resolved mode's
+  controls, and caches detection by `imageGeneration` so slider changes do not re-run it.
 - **Shapes** — colour quantization → optional **region merge** (Simplicity) → **shared-edge
   planar map** (adjacent regions share boundary points, so no gaps/seams) → per-shared-chain
   geometry refinement and primitive substitution. Logo-tuned auto-colour uses exact bucket
@@ -98,8 +109,8 @@ identical against librsvg, so **preview == export**. New UI: a **Straighten** in
 mode. Fidelity per mode: Shapes = ½ exact-pixel + ½ edge alignment (Sobel edge maps
 compared with an O(n) two-pass 3-4 chamfer distance transform); Strokes = chamfer between
 line masks (dark ink for line art, source edges otherwise); Gradient = PSNR-weighted with
-a loose exact-pixel term. `fekthor eval [--fixtures DIR] [--out DIR] [--json]` runs all
-three modes over every fixture at 1024 working size (~8s for 5×3), prints an aligned table
+a loose exact-pixel term. `fekthor eval [--fixtures DIR] [--out DIR] [--json]` runs Auto plus
+the three concrete modes over every fixture at 1024 working size, prints an aligned table
 and writes per-run artefacts; `--json` emits a deterministic `report.json`. Regression
 floors live in `EvalRegressionTests`. Note: this plan also fixed a latent cross-process
 non-determinism (per-process `Set`/`Dictionary` iteration order in `ComponentMerge` and
@@ -107,7 +118,8 @@ non-determinism (per-process `Set`/`Dictionary` iteration order in `ComponentMer
 
 ## Controls
 
-- **Mode** — Shapes / Strokes / Gradient.
+- **Mode** — Auto / Shapes / Strokes / Gradient. Auto is the default and shows the resolved
+  concrete mode's controls.
 - **Resolution** — Fast 512 / Balanced 1024 / Detailed 2048; imports are downscaled to a
   working image before vectorising (fast, avoids node explosions on large sources).
 - **Auto colours** — detect dominant flat colours and exclude anti-aliasing blends; off falls
@@ -133,7 +145,7 @@ inspector sidebar (controls + result metrics + processing loader), synchronized 
 comparison with click-drag and two-finger pan, pinch + button zoom (−/%/+/Fit), crisp
 high-resolution vector preview, and SVG export.
 
-## Quality (fixtures, 1024 working size, post plan 04)
+## Quality (fixtures, 1024 working size, post quality plans)
 
 Geometry refinement cut node counts 50–60% while holding or lifting fidelity; plans 03–04
 added stroke quality and logo handling without regressing canonical scores:
@@ -153,7 +165,7 @@ added stroke quality and logo handling without regressing canonical scores:
 
 ## Testing / CI
 
-`swift test` (60 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
+`swift test` (64 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
 gradient paint + radial round-trip, plan 05 (moment-merge 3-element scene, radial-beats-linear,
 background single-region, blend monotonicity, gradient determinism), round-trip fidelity,
 chamfer/distance-transform known masks, quality
@@ -161,16 +173,16 @@ monotonicity, convert determinism, per-fixture eval regression floors, plus plan
 line/arc/cubic fitting, corner preservation, smoothing=0 polygonal, reverse round-trip,
 arc-direction render, circle/ellipse/rounded-rect primitives, and shared-chain
 point-identity, plus plan 04: exact palette modes, transparent-label skipping, synthetic
-logo fixtures and high-simplicity small-region preservation). GitHub Actions builds and tests the engine and builds the macOS app on
+logo fixtures and high-simplicity small-region preservation, plus plan 06: Stage-A fixture
+resolution, ambiguous Stage-B scoring, Auto determinism/resolvedMode and performance budgets).
+GitHub Actions builds and tests the engine and builds the macOS app on
 `macos-15` (Xcode 16); green on `main`.
 
-## Next: quality plans
+## Quality plans
 
-The next quality leap is fully planned in [`docs/plans/`](plans/README.md) — self-contained
-plans written for an implementer without prior context. Plans 01–05 and 07 are implemented
-(mode-aware metrics & eval harness, geometry refinement, Strokes, Shapes+logo, Gradient
-minimal-regions+radial, Flatten); **plan 06 (Auto mode)** is next. Board cards
-FEKTHOR-088…093 track them.
+The full quality-plan set in [`docs/plans/`](plans/README.md) is implemented: plans 01–07
+cover mode-aware metrics & eval, geometry refinement, Strokes, Shapes+logo, Gradient,
+Auto mode and Flatten. CI polling/pushes are handled by the orchestrator after local review.
 
 ## Known gaps / next
 
