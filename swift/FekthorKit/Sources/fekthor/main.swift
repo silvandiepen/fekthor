@@ -57,6 +57,7 @@ func runProcess(_ args: [String]) {
     var autoColorMinFraction = 0.004
     var flatten = 0.0
     var partAware = false
+    var enhance = false
     var out = "out"
 
     var i = 0
@@ -73,6 +74,7 @@ func runProcess(_ args: [String]) {
         case "--smoothing": i += 1; smoothing = Double(args[i]) ?? smoothing
         case "--straighten": i += 1; straighten = Double(args[i]) ?? straighten
         case "--part-aware": partAware = true
+        case "--enhance": enhance = true
         case "--flatten":
             i += 1
             flatten = min(1.0, max(0.0, Double(args[i]) ?? flatten))
@@ -101,7 +103,8 @@ func runProcess(_ args: [String]) {
     }
 
     do {
-        let img = try RasterImage.load(path: input)
+        var img = try RasterImage.load(path: input)
+        if enhance, let up = Enhance.upscale4x(img) { img = up }
         let result = try Fekthor.convert(
             img, mode: mode,
             options: Fekthor.Options(

@@ -302,6 +302,23 @@ private struct InspectorView: View {
                         }
                 }
 
+                if model.sourceIsSmall {
+                    if model.enhanceAvailable {
+                        Toggle("Enhance small image (AI)", isOn: $model.enhance)
+                            .onChange(of: model.enhance) { _, _ in model.enhanceChanged() }
+                            .help(
+                                "Upscale 4x with on-device Real-ESRGAN before vectorising — small logos and icons trace far better. Fully local."
+                            )
+                    } else {
+                        LabeledContent("Enhance small image (AI)") {
+                            Button(model.modelDownloading ? "Downloading…" : "Get model (33 MB)") {
+                                model.downloadEnhanceModel()
+                            }
+                            .disabled(model.modelDownloading)
+                        }
+                        .help("Downloads the Real-ESRGAN model once from models-data.hakobs.com; it runs fully on-device.")
+                    }
+                }
                 Picker("Resolution", selection: $model.resolution) {
                     Text("Fast · 512").tag(512)
                     Text("Balanced · 1024").tag(1024)
