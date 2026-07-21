@@ -45,8 +45,11 @@ final class ConversionModel: ObservableObject {
     /// Line-colour override for strokes (both sources). Off = keep sampled/black.
     @Published var lineColorEnabled: Bool = false
     @Published var lineColor: Color = .black
-    /// Working resolution (longest side). Smaller = faster, coarser.
-    @Published var resolution: Int = 1024
+    /// Working resolution (longest side). 0 = Auto: simple-palette images
+    /// (logos, flat art) get 2048 — they are cheap and edge fidelity matters
+    /// most there; everything else gets 1024.
+    @Published var resolution: Int = 0
+    private var simplePalette: Bool = false
     @Published var status: String = "Drop, open or paste an image."
     @Published var isBusy = false
     @Published var imageGeneration = 0
@@ -120,6 +123,11 @@ final class ConversionModel: ObservableObject {
         guard let img = originalImage else { return }
         var source = img
         if enhance, sourceIsSmall, let up = Enhance.upscale4x(img) { source = up }
+        // Simple-palette probe (cheap, on a thumbnail): drives Auto resolution
+        // and logo auto-detection.
+        let probe = ColorQuantizer.quantizeAuto(
+            source.scaled(maxDimension: 256), maxColors: 6, minFraction: 0.02)
+        simplePalette = probe.palette.count <= 4
         originalLongest = max(source.width, source.height)
         fullImage = source.scaled(maxDimension: 2048)
         imageGeneration += 1
@@ -160,7 +168,8 @@ final class ConversionModel: ObservableObject {
     /// Re-derive the working image at the current resolution and convert.
     private func deriveAndConvert(name: String? = nil) {
         guard let full = fullImage else { return }
-        let working = full.scaled(maxDimension: resolution)
+        let effectiveResolution = resolution == 0 ? (simplePalette ? 2048 : 1024) : resolution
+        let working = full.scaled(maxDimension: effectiveResolution)
         workingImage = working
         if let cg = working.cgImage() {
             sourceImage = NSImage(
@@ -194,14 +203,23 @@ final class ConversionModel: ObservableObject {
         // Flatten is a Shapes-only behaviour; never leak it into Strokes/Gradient or Auto
         // resolutions that are not Shapes.
         let flattenValue = conversionMode == .shapes ? flatten : 0
+        // Auto + simple palette + shapes = a logo-class image: use logo-grade
+        // parameters (tiny accents like an ® survive, crisper straightening)
+        // without yanking the user's sliders or leaving Auto mode.
+        let logoAuto = mode == .auto && conversionMode == .shapes && simplePalette
         let options = Fekthor.Options(
-            colors: Int(colors), epsilon: eps, simplicity: simplicity, smoothing: smoothing,
-            straighten: straighten, autoColors: autoColors,
-            autoColorMinFraction: autoColorMinFraction, flatten: flattenValue,
+            colors: Int(colors), epsilon: logoAuto ? min(eps, 0.885) : eps,
+            simplicity: logoAuto ? min(simplicity, 0.10) : simplicity,
+            smoothing: logoAuto ? 0.35 : smoothing,
+            straighten: logoAuto ? max(straighten, 0.80) : straighten,
+            autoColors: autoColors,
+            autoColorMinFraction: logoAuto ? 0.002 : autoColorMinFraction,
+            flatten: flattenValue,
             partAware: conversionMode == .shapes && partAware,
             strokeWidth: strokeWidthAuto ? nil : strokeWidth,
             uniformStrokeWidth: uniformStrokeWidth, strokeSource: strokeSource,
             strokeCap: strokeCap, taper: taper, lineColor: lineRGB)
+        let statusSuffix = logoAuto ? " · logo" : ""
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try Fekthor.convert(working, mode: conversionMode, options: options)
@@ -238,7 +256,7 @@ final class ConversionModel: ObservableObject {
                     self.resolvedMode = resolvedMode
                     self.status =
                         mode == .auto
-                        ? "Converted · auto→\(resolvedMode.rawValue)"
+                        ? "Converted · auto→\(resolvedMode.rawValue)\(statusSuffix)"
                         : "Converted · \(mode.rawValue)"
                     self.isBusy = false
                 }

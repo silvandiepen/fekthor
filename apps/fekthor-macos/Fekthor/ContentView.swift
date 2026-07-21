@@ -320,6 +320,7 @@ private struct InspectorView: View {
                     }
                 }
                 Picker("Resolution", selection: $model.resolution) {
+                    Text("Auto").tag(0)
                     Text("Fast · 512").tag(512)
                     Text("Balanced · 1024").tag(1024)
                     Text("Detailed · 2048").tag(2048)
