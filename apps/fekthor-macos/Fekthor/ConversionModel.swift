@@ -29,12 +29,6 @@ final class ConversionModel: ObservableObject {
     @Published var modelDownloading: Bool = false
     @Published var sourceIsSmall: Bool = false
     private var originalImage: RasterImage?
-    /// Real-ESRGAN 4x enhancement for small sources (model optional, local).
-    @Published var enhance: Bool = false
-    @Published var enhanceAvailable: Bool = Enhance.isAvailable
-    @Published var modelDownloading: Bool = false
-    @Published var sourceIsSmall: Bool = false
-    private var originalImage: RasterImage?
     @Published var smoothing: Double = 0.65
     /// Geometry-refinement straighten strength (0…1): near-straight runs collapse
     /// to single lines / axis-snapped primitives.
