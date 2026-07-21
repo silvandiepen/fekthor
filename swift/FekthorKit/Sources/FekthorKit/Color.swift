@@ -165,11 +165,21 @@ public enum ColorQuantizer {
         let minSep2 = 28 * 28
         var selected: [(color: RGB, exact: Bool)] = []
         func selectedColors() -> [RGB] { selected.map(\.color) }
-        // Pass 1: the frequent flat colours.
+        // Pass 1: the frequent flat colours. The separation floor keeps noise
+        // shades of one surface from splitting the palette — but a LARGE bucket
+        // living away from edges is a deliberate second tone of the same
+        // material (a beard's highlight vs its base), not noise: admit it at a
+        // reduced separation so near-tone flat art keeps both fills.
+        let nearToneSep2 = 15 * 15
+        let nearToneMin = max(minCount, Int(Double(n) * 0.01))
         for b in buckets {
             if selected.count >= maxColors { break }
             if b.count < minCount { break }
             if selectedColors().allSatisfy({ dist2($0, b.color) >= minSep2 }) {
+                selected.append((b.color, b.exact))
+            } else if b.count >= nearToneMin, b.edgeFraction < 0.3,
+                selectedColors().allSatisfy({ dist2($0, b.color) >= nearToneSep2 })
+            {
                 selected.append((b.color, b.exact))
             }
         }
