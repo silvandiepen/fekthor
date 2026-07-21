@@ -56,6 +56,7 @@ func runProcess(_ args: [String]) {
     var autoColors = true
     var autoColorMinFraction = 0.004
     var flatten = 0.0
+    var partAware = false
     var out = "out"
 
     var i = 0
@@ -71,6 +72,7 @@ func runProcess(_ args: [String]) {
         case "--simplicity": i += 1; simplicity = Double(args[i]) ?? simplicity
         case "--smoothing": i += 1; smoothing = Double(args[i]) ?? smoothing
         case "--straighten": i += 1; straighten = Double(args[i]) ?? straighten
+        case "--part-aware": partAware = true
         case "--flatten":
             i += 1
             flatten = min(1.0, max(0.0, Double(args[i]) ?? flatten))
@@ -106,7 +108,7 @@ func runProcess(_ args: [String]) {
                 colors: colors, epsilon: epsilon, minArea: minArea,
                 simplicity: simplicity, smoothing: smoothing, straighten: straighten,
                 autoColors: autoColors, autoColorMinFraction: autoColorMinFraction,
-                flatten: flatten))
+                flatten: flatten, partAware: partAware))
 
         try FileManager.default.createDirectory(
             atPath: out, withIntermediateDirectories: true)

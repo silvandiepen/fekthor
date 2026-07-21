@@ -21,6 +21,8 @@ final class ConversionModel: ObservableObject {
     /// Flatten strength (Shapes only): collapse shade families (same hue, different
     /// lightness) into flat colours. 0 = off (identical to the non-flatten pipeline).
     @Published var flatten: Double = 0
+    /// ML part awareness (Vision instance masks) — Shapes only, opt-in.
+    @Published var partAware: Bool = false
     @Published var smoothing: Double = 0.65
     /// Geometry-refinement straighten strength (0…1): near-straight runs collapse
     /// to single lines / axis-snapped primitives.
@@ -152,6 +154,7 @@ final class ConversionModel: ObservableObject {
             colors: Int(colors), epsilon: eps, simplicity: simplicity, smoothing: smoothing,
             straighten: straighten, autoColors: autoColors,
             autoColorMinFraction: autoColorMinFraction, flatten: flattenValue,
+            partAware: conversionMode == .shapes && partAware,
             strokeWidth: strokeWidthAuto ? nil : strokeWidth,
             uniformStrokeWidth: uniformStrokeWidth, strokeSource: strokeSource,
             strokeCap: strokeCap, taper: taper, lineColor: lineRGB)

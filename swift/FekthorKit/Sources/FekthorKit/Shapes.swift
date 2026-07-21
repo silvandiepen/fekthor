@@ -21,10 +21,13 @@ public struct ShapesConfig {
     /// Flatten strength (0…1): collapse shade families via the hue-weighted Oklab
     /// metric. 0 keeps the pipeline byte-identical to the non-flatten path.
     public var flatten: Double
+    /// ML part awareness (Vision instance masks): regions never merge across a
+    /// detected part boundary. Opt-in; output may vary across OS versions.
+    public var partAware: Bool
     public init(
         colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, simplicity: Double = 0.3,
         autoColors: Bool = true, smoothing: Double = 0.65, straighten: Double = 0.5,
-        autoColorMinFraction: Double = 0.004, flatten: Double = 0
+        autoColorMinFraction: Double = 0.004, flatten: Double = 0, partAware: Bool = false
     ) {
         self.colors = colors
         self.iters = iters
@@ -35,6 +38,7 @@ public struct ShapesConfig {
         self.straighten = straighten
         self.autoColorMinFraction = autoColorMinFraction
         self.flatten = flatten
+        self.partAware = partAware
     }
 }
 
@@ -212,6 +216,14 @@ public enum ShapesMode {
         let quantized = AlphaLabels.withTransparentLabel(
             img, quantized: q, transparentLabel: transparentLabel)
 
+        // ML part awareness (opt-in): Vision instance masks become merge walls.
+        let walls: [Int]? = config.partAware ? SubjectMask.instanceLabels(img) : nil
+        // Part-aware palette membership: a colour family living almost entirely
+        // outside the subject (the background/cape red) must not appear inside
+        // it — in-subject pixels of such families reassign to their nearest
+        // in-subject family (a beard shadow stops rendering as background red).
+        let quantized2 = walls.map { partitionPalette(quantized, walls: $0) } ?? quantized
+
         // Optionally merge similar / small regions for cleaner, simpler shapes.
         let labels: [Int]
         let colors: [RGB]
@@ -227,10 +239,10 @@ public enum ShapesMode {
                 Double(img.width * img.height) * (0.0006 * s + 0.0006 * config.flatten))
             let colorThreshold = 0.006 + 0.012 * config.flatten
             let (rawLabels, rawColors) = ComponentMerge.merge(
-                indices: quantized.indices, palette: quantized.palette,
+                indices: quantized2.indices, palette: quantized2.palette,
                 width: img.width, height: img.height, minArea: minArea,
                 colorThreshold: colorThreshold, flatten: config.flatten,
-                distinctGuard: ShapesMode.flattenSeparation)
+                distinctGuard: ShapesMode.flattenSeparation, walls: walls)
             // Group same-colour regions into one flat face. ComponentMerge already
             // absorbed specks (so boundaries stay clean and node counts low); merging
             // the face *labels* by colour then keeps the fill count at ~the palette
@@ -242,11 +254,18 @@ public enum ShapesMode {
             let minArea = Int(Double(img.width * img.height) * 0.0006 * s)
             let colorThreshold = 40.0 * 40.0 * s
             (labels, colors) = ComponentMerge.merge(
-                indices: quantized.indices, palette: quantized.palette, width: img.width, height: img.height,
-                minArea: minArea, colorThreshold: colorThreshold)
+                indices: quantized2.indices, palette: quantized2.palette, width: img.width, height: img.height,
+                minArea: minArea, colorThreshold: colorThreshold, walls: walls)
+        } else if walls != nil {
+            // No merging requested, but part walls still require components to
+            // be split at part boundaries.
+            (labels, colors) = ComponentMerge.merge(
+                indices: quantized2.indices, palette: quantized2.palette,
+                width: img.width, height: img.height,
+                minArea: 0, colorThreshold: 0, walls: walls)
         } else {
-            labels = quantized.indices
-            colors = quantized.palette
+            labels = quantized2.indices
+            colors = quantized2.palette
         }
         // Per-region colour re-estimation (flatten=0 path): a region's colour
         // comes from its OWN pixels — the dominant exact source RGB — not from a
@@ -261,7 +280,7 @@ public enum ShapesMode {
             finalColors = regionDominantColors(img, labels: finalLabels, fallback: colors)
         }
         let transparentOutputLabels = AlphaLabels.outputLabels(
-            labels: finalLabels, indices: quantized.indices, transparentLabel: transparentLabel)
+            labels: finalLabels, indices: quantized2.indices, transparentLabel: transparentLabel)
 
         // Shared-edge planar map with geometry refinement: adjacent regions use
         // identical refined boundary chains (no gaps), corners stay sharp, and
@@ -392,5 +411,52 @@ public enum ShapeGeometryBuilder {
         // Fallback: legacy polygonal rings.
         let rings = face.rings.filter { $0.count >= 3 }
         return rings.isEmpty ? nil : .rings(rings)
+    }
+}
+
+extension ShapesMode {
+    /// Part-aware palette membership: families ≥85% outside the subject are
+    /// background families; in-subject pixels assigned to one reassign to the
+    /// nearest family that has real in-subject support. Deterministic.
+    static func partitionPalette(_ q: Quantized, walls: [Int]) -> Quantized {
+        let count = q.palette.count
+        guard count > 1, walls.count == q.indices.count else { return q }
+        var inside = [Int](repeating: 0, count: count)
+        var outside = [Int](repeating: 0, count: count)
+        for i in 0..<q.indices.count {
+            if walls[i] > 0 { inside[q.indices[i]] += 1 } else { outside[q.indices[i]] += 1 }
+        }
+        var isBackground = [Bool](repeating: false, count: count)
+        var hasSubjectFamily = false
+        for l in 0..<count {
+            let total = inside[l] + outside[l]
+            if total > 0 && Double(outside[l]) >= 0.85 * Double(total) {
+                isBackground[l] = true
+            } else if total > 0 {
+                hasSubjectFamily = true
+            }
+        }
+        guard hasSubjectFamily, isBackground.contains(true) else { return q }
+        // Nearest in-subject family per background family (RGB distance).
+        var remap = Array(0..<count)
+        for l in 0..<count where isBackground[l] {
+            var best = -1
+            var bestd = Int.max
+            for m in 0..<count where !isBackground[m] && inside[m] > 0 {
+                let d = ColorQuantizer.dist2(q.palette[l], q.palette[m])
+                if d < bestd || (d == bestd && m < best) {
+                    bestd = d
+                    best = m
+                }
+            }
+            if best >= 0 { remap[l] = best }
+        }
+        var indices = q.indices
+        for i in 0..<indices.count where walls[i] > 0 {
+            indices[i] = remap[indices[i]]
+        }
+        return Quantized(
+            width: q.width, height: q.height, palette: q.palette, indices: indices,
+            paletteExactCount: q.paletteExactCount)
     }
 }

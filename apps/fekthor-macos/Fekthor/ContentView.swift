@@ -329,6 +329,11 @@ private struct InspectorView: View {
                     slider("Flatten", value: $model.flatten, range: 0...1, step: 0.05) {
                         String(format: "%.0f%%", model.flatten * 100)
                     }
+                    Toggle("Part aware (AI)", isOn: $model.partAware)
+                        .onChange(of: model.partAware) { _, _ in model.convert() }
+                        .help(
+                            "Use on-device Vision segmentation so regions never merge across a detected part boundary. Fully local."
+                        )
                 }
                 if model.controlsMode == .strokes {
                     Picker("Lines from", selection: $model.strokeSource) {

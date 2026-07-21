@@ -33,7 +33,8 @@ public enum ComponentMerge {
     public static func merge(
         indices: [Int], palette: [RGB], width w: Int, height h: Int,
         minArea: Int, colorThreshold: Double, flatten: Double = 0,
-        distinctGuard: Double = .greatestFiniteMagnitude
+        distinctGuard: Double = .greatestFiniteMagnitude,
+        walls: [Int]? = nil
     ) -> (labels: [Int], colors: [RGB]) {
         let n = w * h
         var comp = [Int](repeating: -1, count: n)
@@ -41,6 +42,13 @@ public enum ComponentMerge {
         var sumR: [Double] = []
         var sumG: [Double] = []
         var sumB: [Double] = []
+        // Part walls (ML part awareness): components never grow across a wall
+        // and never become adjacent across one, so no merge — colour, area or
+        // blend absorption — can cross a part boundary.
+        @inline(__always) func sameWall(_ a: Int, _ b: Int) -> Bool {
+            guard let walls else { return true }
+            return walls[a] == walls[b]
+        }
 
         // Connected components (4-connected) over the colour-index map.
         var stack: [Int] = []
@@ -61,19 +69,19 @@ public enum ComponentMerge {
                 sumB[id] += Double(col.b)
                 let x = p % w
                 let y = p / w
-                if x > 0, comp[p - 1] < 0, indices[p - 1] == target {
+                if x > 0, comp[p - 1] < 0, indices[p - 1] == target, sameWall(p, p - 1) {
                     comp[p - 1] = id
                     stack.append(p - 1)
                 }
-                if x < w - 1, comp[p + 1] < 0, indices[p + 1] == target {
+                if x < w - 1, comp[p + 1] < 0, indices[p + 1] == target, sameWall(p, p + 1) {
                     comp[p + 1] = id
                     stack.append(p + 1)
                 }
-                if y > 0, comp[p - w] < 0, indices[p - w] == target {
+                if y > 0, comp[p - w] < 0, indices[p - w] == target, sameWall(p, p - w) {
                     comp[p - w] = id
                     stack.append(p - w)
                 }
-                if y < h - 1, comp[p + w] < 0, indices[p + w] == target {
+                if y < h - 1, comp[p + w] < 0, indices[p + w] == target, sameWall(p, p + w) {
                     comp[p + w] = id
                     stack.append(p + w)
                 }
@@ -82,16 +90,17 @@ public enum ComponentMerge {
         let count = area.count
 
         // Union-find with area + colour sums, and an adjacency set per component.
+        // Adjacency across a wall is never recorded, so unions cannot cross parts.
         var parent = Array(0..<count)
         var adj = [Set<Int>](repeating: [], count: count)
         for p in 0..<n {
             let x = p % w
             let y = p / w
-            if x < w - 1, comp[p] != comp[p + 1] {
+            if x < w - 1, comp[p] != comp[p + 1], sameWall(p, p + 1) {
                 adj[comp[p]].insert(comp[p + 1])
                 adj[comp[p + 1]].insert(comp[p])
             }
-            if y < h - 1, comp[p] != comp[p + w] {
+            if y < h - 1, comp[p] != comp[p + w], sameWall(p, p + w) {
                 adj[comp[p]].insert(comp[p + w])
                 adj[comp[p + w]].insert(comp[p])
             }

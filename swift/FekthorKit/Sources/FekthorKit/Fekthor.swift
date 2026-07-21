@@ -22,6 +22,10 @@ public enum Fekthor {
         /// different lightness) into flat colours via the hue-weighted Oklab metric.
         /// 0 = byte-identical to the non-flatten pipeline (plan 07).
         public var flatten: Double
+        /// ML part awareness (Vision instance masks) for Shapes. Opt-in;
+        /// model output may vary across OS versions, so it is excluded from
+        /// the deterministic eval floors.
+        public var partAware: Bool
         /// Overrides the estimated stroke width in Strokes mode (adjustable).
         public var strokeWidth: Double?
         /// Uniform width: every stroke shares the median width (no manual override).
@@ -38,6 +42,7 @@ public enum Fekthor {
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
             simplicity: Double = 0.3, smoothing: Double = 0.65, straighten: Double = 0.5,
             autoColors: Bool = true, autoColorMinFraction: Double = 0.004, flatten: Double = 0,
+            partAware: Bool = false,
             strokeWidth: Double? = nil, uniformStrokeWidth: Bool = false,
             strokeSource: StrokeSource = .auto, strokeCap: LineCap = .round, taper: Bool = false,
             lineColor: RGB? = nil
@@ -52,6 +57,7 @@ public enum Fekthor {
             self.autoColors = autoColors
             self.autoColorMinFraction = autoColorMinFraction
             self.flatten = flatten
+            self.partAware = partAware
             self.strokeWidth = strokeWidth
             self.uniformStrokeWidth = uniformStrokeWidth
             self.strokeSource = strokeSource
@@ -117,7 +123,7 @@ public enum Fekthor {
                     simplicity: options.simplicity, autoColors: options.autoColors,
                     smoothing: options.smoothing, straighten: options.straighten,
                     autoColorMinFraction: options.autoColorMinFraction,
-                    flatten: options.flatten))
+                    flatten: options.flatten, partAware: options.partAware))
             doc = output.document
             conversionDetail = output.detail
         case .strokes:
