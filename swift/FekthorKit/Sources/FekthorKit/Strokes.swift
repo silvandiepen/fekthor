@@ -106,28 +106,75 @@ public enum StrokesMode {
             labels: labels, width: img.width, height: img.height, epsilon: max(1.0, config.epsilon))
         let width = config.widthOverride ?? 2.0
         let minLen = max(3.0, width * 1.5)
+        let lineColor = config.lineColor ?? (0, 0, 0)
 
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
         let refineOpt = RefineOptions(
             tolerance: config.epsilon * 1.6, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
+
+        // Keep only chains long enough to matter, then order longest-first so the
+        // double-line suppressor always keeps the longer of a parallel pair. The
+        // sort has a deterministic tie-breaker (start point, then length) — equal
+        // lengths must not reorder run to run (invariant #1).
+        var kept: [(chain: [Pt], closed: Bool, len: Double)] = []
         for chain in chains where chain.count >= 2 {
             let first = chain.first!
             let last = chain.last!
             let closed =
                 chain.count > 3
                 && (pow(first.x - last.x, 2) + pow(first.y - last.y, 2)) < 4.0
+            let len = polyLen(chain)
             if !closed && Double(chain.count) < minLen { continue }
-            let refined = PathRefine.refine(chain, closed: closed, options: refineOpt)
+            kept.append((chain, closed, len))
+        }
+        kept.sort {
+            if $0.len != $1.len { return $0.len > $1.len }
+            if $0.chain[0].x != $1.chain[0].x { return $0.chain[0].x < $1.chain[0].x }
+            if $0.chain[0].y != $1.chain[0].y { return $0.chain[0].y < $1.chain[0].y }
+            return $0.chain.count < $1.chain.count
+        }
+
+        // Grid-hash of emitted points for the O(n) parallel-double-line test: a
+        // 1-px double line appears when two region boundaries run closer than the
+        // line width. Drop a chain if ≥80% of its (densely resampled) points lie
+        // within 0.8×width of an already-emitted longer chain.
+        let proximity = max(0.8, 0.8 * width)
+        var grid = PointGrid(cell: proximity)
+        for item in kept {
+            let dense = densify(item.chain, spacing: max(1.0, proximity * 0.5))
+            var near = 0
+            for p in dense where grid.hasNeighbor(p, within: proximity) { near += 1 }
+            if !dense.isEmpty && Double(near) / Double(dense.count) >= 0.8 { continue }
+
+            let refined = PathRefine.refine(item.chain, closed: item.closed, options: refineOpt)
             doc.elements.append(
                 .stroke(
                     StrokePath(
-                        id: "stroke-\(nextID)", color: (0, 0, 0), width: width, closed: closed,
-                        points: chain, refined: refined)))
+                        id: "stroke-\(nextID)", color: lineColor, width: width,
+                        closed: item.closed, points: item.chain, cap: config.cap, refined: refined)))
             nextID += 1
+            for p in dense { grid.insert(p) }
         }
         return doc
+    }
+
+    /// Resample a polyline to at most `spacing`-apart points (for proximity tests).
+    static func densify(_ pts: [Pt], spacing: Double) -> [Pt] {
+        guard pts.count >= 2, spacing > 1e-6 else { return pts }
+        var out: [Pt] = [pts[0]]
+        for i in 1..<pts.count {
+            let a = pts[i - 1]
+            let b = pts[i]
+            let d = (pow(b.x - a.x, 2) + pow(b.y - a.y, 2)).squareRoot()
+            let steps = max(1, Int((d / spacing).rounded(.up)))
+            for s in 1...steps {
+                let t = Double(s) / Double(steps)
+                out.append(Pt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t))
+            }
+        }
+        return out
     }
     /// Sample a representative ink colour from the source under a skeleton point.
     /// Near-grey dark ink is snapped to pure black so B&W line art gets clean
@@ -483,5 +530,40 @@ public enum StrokesMode {
             }
         }
         return c
+    }
+}
+
+/// A coarse uniform spatial hash for O(1)-ish "is any stored point within r?"
+/// queries (used by the coloring-plate double-line suppressor). The dictionary is
+/// only queried, never iterated into output, so ordering does not affect results.
+struct PointGrid {
+    let cell: Double
+    private var buckets: [Int64: [Pt]] = [:]
+
+    init(cell: Double) { self.cell = max(0.5, cell) }
+
+    @inline(__always) private func key(_ cx: Int, _ cy: Int) -> Int64 {
+        (Int64(cx) << 32) ^ (Int64(cy) & 0xffff_ffff)
+    }
+
+    mutating func insert(_ p: Pt) {
+        let cx = Int((p.x / cell).rounded(.down))
+        let cy = Int((p.y / cell).rounded(.down))
+        buckets[key(cx, cy), default: []].append(p)
+    }
+
+    func hasNeighbor(_ p: Pt, within r: Double) -> Bool {
+        let cx = Int((p.x / cell).rounded(.down))
+        let cy = Int((p.y / cell).rounded(.down))
+        let r2 = r * r
+        for dy in -1...1 {
+            for dx in -1...1 {
+                guard let pts = buckets[key(cx + dx, cy + dy)] else { continue }
+                for q in pts {
+                    if (p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) <= r2 { return true }
+                }
+            }
+        }
+        return false
     }
 }
