@@ -102,7 +102,9 @@ public enum SVGExport {
         var gradId: [Int: String] = [:]
         var gi = 0
         for (i, el) in doc.elements.enumerated() {
-            if case .fill(let f) = el, case .linear(let g) = f.paint {
+            guard case .fill(let f) = el else { continue }
+            switch f.paint {
+            case .linear(let g):
                 let id = "grad-\(gi)"
                 gradId[i] = id
                 gi += 1
@@ -113,6 +115,19 @@ public enum SVGExport {
                         "      <stop offset=\"\(num(stop.offset))\" stop-color=\"\(hex(stop.color))\"/>\n"
                 }
                 defs += "    </linearGradient>\n"
+            case .radial(let g):
+                let id = "grad-\(gi)"
+                gradId[i] = id
+                gi += 1
+                defs +=
+                    "    <radialGradient id=\"\(id)\" gradientUnits=\"userSpaceOnUse\" cx=\"\(num(g.center.x))\" cy=\"\(num(g.center.y))\" r=\"\(num(g.radius))\">\n"
+                for stop in g.stops {
+                    defs +=
+                        "      <stop offset=\"\(num(stop.offset))\" stop-color=\"\(hex(stop.color))\"/>\n"
+                }
+                defs += "    </radialGradient>\n"
+            case .solid:
+                break
             }
         }
 
@@ -126,7 +141,7 @@ public enum SVGExport {
                 let fill: String
                 switch f.paint {
                 case .solid(let rgb): fill = hex(rgb)
-                case .linear: fill = "url(#\(gradId[i] ?? "grad-0"))"
+                case .linear, .radial: fill = "url(#\(gradId[i] ?? "grad-0"))"
                 }
                 s += fillElement(f.geometry, smoothing: smoothing, id: f.id, fill: fill)
             case .stroke(let st):

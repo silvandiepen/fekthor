@@ -68,6 +68,22 @@ public enum Rasterizer {
                                 options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
                         }
                         ctx.restoreGState()
+                    case .radial(let grad):
+                        ctx.saveGState()
+                        ctx.addPath(path)
+                        ctx.clip(using: .evenOdd)
+                        let colors = grad.stops.map { cgColor($0.color) } as CFArray
+                        let locations = grad.stops.map { CGFloat($0.offset) }
+                        if let g = CGGradient(
+                            colorsSpace: space, colors: colors, locations: locations)
+                        {
+                            let c = CGPoint(x: grad.center.x, y: grad.center.y)
+                            ctx.drawRadialGradient(
+                                g, startCenter: c, startRadius: 0,
+                                endCenter: c, endRadius: CGFloat(grad.radius),
+                                options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                        }
+                        ctx.restoreGState()
                     }
                 case .stroke(let s):
                     guard s.refined != nil || s.points.count >= 2 else { continue }

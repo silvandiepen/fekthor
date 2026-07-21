@@ -32,10 +32,25 @@ public struct LinearGradient: Sendable {
     }
 }
 
+/// A radial gradient in user-space (source-pixel) coordinates. Stops run from the
+/// centre (offset 0) outward to `radius` (offset 1). Focal point is not modelled
+/// yet (centre == focus).
+public struct RadialGradient: Sendable {
+    public var center: Pt
+    public var radius: Double
+    public var stops: [GradientStop]
+    public init(center: Pt, radius: Double, stops: [GradientStop]) {
+        self.center = center
+        self.radius = radius
+        self.stops = stops
+    }
+}
+
 /// How a filled shape is painted.
 public enum Paint: Sendable {
     case solid([UInt8])  // [r,g,b]
     case linear(LinearGradient)
+    case radial(RadialGradient)
 }
 
 /// How a filled shape's outline is represented. `rings` is the legacy polygonal
