@@ -29,6 +29,13 @@ Conversion modes:
   modes for byte-exact brand colours, transparent PNGs flow through the label map as a
   dedicated skipped label, and high-simplicity merging preserves far-distinct tiny accents.
   Flat fixture baseline: artist-flat/shapes overall 0.726, 502 nodes.
+  **Flatten** (plan 07, opt-in, default 0): a hue-weighted Oklab metric collapses shade
+  families (a beard's blonds, a face's skins) into flat colours — quantize fine → palette
+  family clustering (complete-linkage under the metric, dominant-shade representative) →
+  region merge with the metric emitting the dominant flat colour → group same-colour
+  regions into one face. `thor-3d` at Colours 12 / Flatten 70% → 11 flat fills reading as
+  flat art (cape red distinct from background red, black eyes). Flatten 0 is byte-identical
+  to the pre-plan pipeline; Strokes/Gradient are unaffected.
 - **Strokes** — auto-detects line art vs colour. Line art: foreground threshold → Zhang-Suen
   thinning → skeleton-graph tracing → **tangent-based edge merging** (a line crossing another
   stays one stroke) → **per-stroke width** (median of 2×dt from the exact Euclidean distance
