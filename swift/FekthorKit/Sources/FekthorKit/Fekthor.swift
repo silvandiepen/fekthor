@@ -39,6 +39,8 @@ public enum Fekthor {
         public var svg: String
         public var rendered: RasterImage
         public var metrics: Metrics
+        /// Mode-aware quality score (see `Quality`). Comparable across modes.
+        public var quality: QualityScore
     }
 
     public enum EngineError: Error, CustomStringConvertible {
@@ -83,6 +85,9 @@ public enum Fekthor {
         let svg = SVGExport.toSVG(doc, smoothing: options.smoothing)
         let rendered = Rasterizer.render(doc, smoothing: options.smoothing)
         let metrics = Comparer.compare(img, rendered, tolerance: 8)
-        return Result(document: doc, svg: svg, rendered: rendered, metrics: metrics)
+        let quality = Quality.score(
+            source: img, document: doc, rendered: rendered, mode: mode)
+        return Result(
+            document: doc, svg: svg, rendered: rendered, metrics: metrics, quality: quality)
     }
 }
