@@ -293,6 +293,23 @@ private struct InspectorView: View {
                         slider("Line width", value: $model.strokeWidth, range: 0.5...30, step: 0.5) {
                             String(format: "%.1f", model.strokeWidth)
                         }
+                    } else {
+                        Toggle("Uniform width", isOn: $model.uniformStrokeWidth)
+                            .onChange(of: model.uniformStrokeWidth) { _, _ in model.convert() }
+                    }
+                    Picker("Caps", selection: $model.strokeCap) {
+                        Text("Round").tag(LineCap.round)
+                        Text("Butt").tag(LineCap.butt)
+                        Text("Square").tag(LineCap.square)
+                    }
+                    .onChange(of: model.strokeCap) { _, _ in model.convert() }
+                    Toggle("Taper ends", isOn: $model.taper)
+                        .onChange(of: model.taper) { _, _ in model.convert() }
+                    Toggle("Line colour", isOn: $model.lineColorEnabled)
+                        .onChange(of: model.lineColorEnabled) { _, _ in model.convert() }
+                    if model.lineColorEnabled {
+                        ColorPicker("Colour", selection: $model.lineColor, supportsOpacity: false)
+                            .onChange(of: model.lineColor) { _, _ in model.convert() }
                     }
                 }
                 slider("Detail", value: $model.detail, range: 0...1, step: 0.05) {

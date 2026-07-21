@@ -21,7 +21,16 @@ final class ConversionModel: ObservableObject {
     @Published var straighten: Double = 0.5
     @Published var strokeWidthAuto: Bool = true
     @Published var strokeWidth: Double = 4.0
+    /// Uniform width: every stroke shares the median width (per-stroke widths off).
+    @Published var uniformStrokeWidth: Bool = false
     @Published var strokeSource: StrokeSource = .auto
+    /// Stroke end-cap style (round/butt/square).
+    @Published var strokeCap: LineCap = .round
+    /// Opt-in taper: narrowing tails render as outline fills (default off).
+    @Published var taper: Bool = false
+    /// Line-colour override for strokes (both sources). Off = keep sampled/black.
+    @Published var lineColorEnabled: Bool = false
+    @Published var lineColor: Color = .black
     /// Working resolution (longest side). Smaller = faster, coarser.
     @Published var resolution: Int = 1024
     @Published var status: String = "Drop, open or paste an image."
@@ -119,10 +128,13 @@ final class ConversionModel: ObservableObject {
         let smoothing = self.smoothing
         // Higher Detail → finer curves (smaller DP tolerance).
         let eps = 4.2 - 3.9 * detail
+        let lineRGB: RGB? = lineColorEnabled ? Self.rgb(from: lineColor) : nil
         let options = Fekthor.Options(
             colors: Int(colors), epsilon: eps, simplicity: simplicity, smoothing: smoothing,
             straighten: straighten, autoColors: autoColors,
-            strokeWidth: strokeWidthAuto ? nil : strokeWidth, strokeSource: strokeSource)
+            strokeWidth: strokeWidthAuto ? nil : strokeWidth,
+            uniformStrokeWidth: uniformStrokeWidth, strokeSource: strokeSource,
+            strokeCap: strokeCap, taper: taper, lineColor: lineRGB)
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try Fekthor.convert(working, mode: mode, options: options)
@@ -189,6 +201,16 @@ final class ConversionModel: ObservableObject {
             Task { @MainActor in self.load(path: url.path) }
         }
         return true
+    }
+
+    /// Convert a SwiftUI `Color` to the engine's `RGB` (sRGB 8-bit).
+    static func rgb(from color: Color) -> RGB {
+        let ns = NSColor(color).usingColorSpace(.sRGB) ?? .black
+        return (
+            UInt8((ns.redComponent * 255).rounded()),
+            UInt8((ns.greenComponent * 255).rounded()),
+            UInt8((ns.blueComponent * 255).rounded())
+        )
     }
 
     func loadLaunchArgumentIfPresent() {
