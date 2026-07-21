@@ -30,6 +30,7 @@ struct ContentView: View {
                     .inspectorColumnWidth(min: 250, ideal: 290, max: 380)
             }
             .onDrop(of: [.fileURL], isTargeted: nil) { model.handleDrop($0) }
+            .onPasteCommand(of: [.image, .fileURL]) { _ in model.paste() }
             .onChange(of: model.imageGeneration) { _, _ in
                 zoom = 1
                 offset = .zero
@@ -42,8 +43,6 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Button { model.openPanel() } label: { Label("Open", systemImage: "photo.badge.plus") }
-            Button { model.paste() } label: { Label("Paste", systemImage: "clipboard") }
-                .keyboardShortcut("v", modifiers: .command)
         }
         ToolbarItemGroup(placement: .primaryAction) {
             if zoom != 1 || offset != .zero {
@@ -95,15 +94,10 @@ private struct EmptyStateView: View {
                 Text("Drop an image here").font(.title2).fontWeight(.medium)
                 Text("Turn line art and flat images into editable strokes and shapes.")
                     .foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    Button { model.openPanel() } label: { Label("Open Image", systemImage: "folder") }
-                        .controlSize(.large)
-                    Button { model.paste() } label: { Label("Paste", systemImage: "clipboard") }
-                        .controlSize(.large)
-                        .keyboardShortcut("v", modifiers: .command)
-                }
-                .padding(.top, 4)
-                Text("PNG · JPEG · TIFF · HEIC · WebP")
+                Button { model.openPanel() } label: { Label("Open Image", systemImage: "folder") }
+                    .controlSize(.large)
+                    .padding(.top, 4)
+                Text("or press ⌘V to paste · PNG · JPEG · TIFF · HEIC · WebP")
                     .font(.caption).foregroundStyle(.tertiary)
             }
             .padding(40)
