@@ -84,7 +84,10 @@ public enum SkeletonGraph {
     /// Merge edges that continue straight through a junction into single
     /// strokes, so a line crossing another stays one path (drastically fewer,
     /// longer strokes). Edges are chained greedily by tangent continuity.
-    public static func mergeByTangent(_ edges: [[Pt]], minCos: Double = 0.3) -> [[Pt]] {
+    public static func mergeByTangent(_ edges: [[Pt]], minCos: Double = 0.5) -> [[Pt]] {
+        // minCos 0.5 (≤60° weld): a line genuinely passing through a crossing is
+        // near-straight (cos ≈ 0.9+); permissive welds created dog-legged chains
+        // whose fitted curves shortcut across occluding parts.
         func nkey(_ p: Pt) -> Int { Int(p.y.rounded()) * 100_000 + Int(p.x.rounded()) }
         func unit(_ ax: Double, _ ay: Double) -> (Double, Double) {
             let m = (ax * ax + ay * ay).squareRoot()

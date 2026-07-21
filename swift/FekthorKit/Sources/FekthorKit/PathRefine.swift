@@ -77,6 +77,21 @@ public enum PathRefine {
     // MARK: - Open / closed drivers
 
     static func refineOpen(_ pts: [Pt], _ opt: RefineOptions) -> RefinedPath {
+        // Straight lines first (user principle): a long chain that is globally
+        // straight IS one line — junction crossings dent the skeleton by a pixel
+        // or two, and piecewise fitting turns those dents into visible wobble.
+        // The absolute tolerance grows mildly with length to absorb that noise.
+        if let a = pts.first, let b = pts.last {
+            let chordLen = dist(a, b)
+            if chordLen >= 40 {
+                let tol = max(opt.tolerance, chordLen * 0.012) * (0.5 + opt.straighten)
+                var maxD = 0.0
+                for p in pts { maxD = max(maxD, perpDist(p, a, b)) }
+                if maxD <= tol {
+                    return RefinedPath(start: a, segments: [.line(to: b)], closed: false)
+                }
+            }
+        }
         let corners = detectCorners(pts, closed: false, opt)
         var anchors = [0]
         anchors.append(contentsOf: corners)
@@ -272,7 +287,13 @@ public enum PathRefine {
             // Local maximum with a deterministic tie-break (strictly greater than
             // the successor, ≥ the predecessor).
             if turn[i] >= turn[p] && turn[i] > turn[q] {
-                if ks < k && shortTurn(i) < turn[i] * 0.45 { continue }
+                // A strong turn is a corner regardless of how it is distributed —
+                // otherwise a fitted curve shortcuts across the dogleg (e.g. a
+                // stripe welded through an occluding outline cutting straight
+                // through the object). Only moderate turns need the sharpness
+                // confirmation that keeps smooth curls (noses) un-anchored.
+                let strongTurn = turn[i] > cornerRad * 1.7
+                if !strongTurn, ks < k, shortTurn(i) < turn[i] * 0.45 { continue }
                 if let last = corners.last, i - last < k { continue }
                 corners.append(i)
             }
