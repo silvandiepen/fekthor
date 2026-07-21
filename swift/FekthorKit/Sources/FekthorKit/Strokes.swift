@@ -363,8 +363,23 @@ public enum StrokesMode {
                     degStart: deg(f2), degEnd: deg(l2))
             }
             let smoothed =
-                closed ? dense : Geometry.smoothPolyline(dense, window: 2, iterations: 2)
-            let refined = PathRefine.refine(smoothed, closed: closed, options: refineOpt)
+                closed
+                ? dense
+                : Geometry.smoothPolyline(
+                    dense, window: max(2, min(4, Int((strokeWidth / 3).rounded()))),
+                    iterations: 2)
+            var refined = PathRefine.refine(smoothed, closed: closed, options: refineOpt)
+            // Closed stroke loops that truly are a primitive (a ferrule's
+            // rounded rect, a drawn circle) snap to exact primitive geometry —
+            // fitted rings always carry a little wobble.
+            if closed,
+                let prim = PrimitiveDetect.detect(
+                    smoothed, tolerance: max(2.0, strokeWidth * 0.45),
+                    straighten: config.straighten),
+                let outline = PrimitiveDetect.strokeOutline(prim)
+            {
+                refined = outline
+            }
             if refined.segments.count < 1 { continue }
             let color = sampleColor(img, edge[edge.count / 2])
             pendings.append(
@@ -516,7 +531,7 @@ public enum StrokesMode {
         _ chain: [Pt], junctionDist: [Double], width: Double, w: Int, h: Int
     ) -> [Pt] {
         var pts = chain
-        let maxTail = 1.6 * width
+        let maxTail = 2.0 * width
         func junctionIndex(fromEnd reversed: Bool) -> Int? {
             let idxs: [Int] = reversed ? Array(pts.indices.reversed()) : Array(pts.indices)
             var arc = 0.0
@@ -573,7 +588,7 @@ public enum StrokesMode {
         }
         func march(_ end: Pt, _ t: Pt) -> Pt? {
             if t.x == 0 && t.y == 0 { return nil }
-            let maxTip = 1.5 * width
+            let maxTip = 1.0 * width
             let maxT = 1.2 * width
             let maxDist = max(maxTip, maxT)
             var tipD = 0.0

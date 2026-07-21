@@ -262,3 +262,63 @@ public enum PrimitiveDetect {
         return outside + inside - r
     }
 }
+
+extension PrimitiveDetect {
+    /// Exact stroke-outline path for a detected primitive: closed STROKE loops
+    /// (a brush ferrule, a drawn circle) snap to clean primitive geometry
+    /// instead of a wobbly fitted ring. Circles become two arcs; (rounded)
+    /// rects become lines + corner arcs. Ellipses return nil (not exactly
+    /// representable with circular arcs) — the caller keeps the fitted path.
+    public static func strokeOutline(_ geom: ShapeGeometry) -> RefinedPath? {
+        switch geom {
+        case .circle(let c, let r):
+            let start = Pt(c.x + r, c.y)
+            return RefinedPath(
+                start: start,
+                segments: [
+                    .arc(center: c, radius: r, startAngle: 0, endAngle: .pi, clockwise: true),
+                    .arc(center: c, radius: r, startAngle: .pi, endAngle: 0, clockwise: true),
+                ], closed: true)
+        case .rect(let c, let w, let h, let rot, let cr):
+            let hw = w / 2
+            let hh = h / 2
+            let r = min(cr, min(hw, hh))
+            let ca = cos(rot)
+            let sa = sin(rot)
+            func place(_ x: Double, _ y: Double) -> Pt {
+                Pt(c.x + x * ca - y * sa, c.y + x * sa + y * ca)
+            }
+            if r <= 0.5 {
+                let p0 = place(-hw, -hh)
+                return RefinedPath(
+                    start: p0,
+                    segments: [
+                        .line(to: place(hw, -hh)), .line(to: place(hw, hh)),
+                        .line(to: place(-hw, hh)), .line(to: p0),
+                    ], closed: true)
+            }
+            // Rounded rect: start on the top edge after the top-left corner.
+            let p0 = place(-hw + r, -hh)
+            var segs: [RefinedSegment] = []
+            segs.append(.line(to: place(hw - r, -hh)))
+            segs.append(cornerArc(place(hw - r, -hh + r), r, rot, from: -.pi / 2, to: 0))
+            segs.append(.line(to: place(hw, hh - r)))
+            segs.append(cornerArc(place(hw - r, hh - r), r, rot, from: 0, to: .pi / 2))
+            segs.append(.line(to: place(-hw + r, hh)))
+            segs.append(cornerArc(place(-hw + r, hh - r), r, rot, from: .pi / 2, to: .pi))
+            segs.append(.line(to: place(-hw, -hh + r)))
+            segs.append(cornerArc(place(-hw + r, -hh + r), r, rot, from: .pi, to: 3 * .pi / 2))
+            return RefinedPath(start: p0, segments: segs, closed: true)
+        default:
+            return nil
+        }
+    }
+
+    private static func cornerArc(
+        _ center: Pt, _ r: Double, _ rot: Double, from a0: Double, to a1: Double
+    ) -> RefinedSegment {
+        .arc(
+            center: center, radius: r, startAngle: a0 + rot, endAngle: a1 + rot,
+            clockwise: true)
+    }
+}
