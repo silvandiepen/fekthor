@@ -114,11 +114,12 @@ public enum Fekthor {
             doc = GradientMode.run(
                 img,
                 config: GradientConfig(
-                    colors: 32, epsilon: max(1.0, options.epsilon),
-                    minArea: options.minArea,
-                    // Fixed fine bands (a smooth gradient has no flat colours to
-                    // auto-detect), merged into rich gradient regions by Simplicity.
-                    autoColors: false, simplicity: max(0.25, options.simplicity),
+                    colors: 64, epsilon: max(2.0, options.epsilon),
+                    minArea: options.minArea, stops: 8,
+                    // Fine fixed oversegmentation (a smooth gradient has no flat
+                    // colours to auto-detect); moment-based agglomeration, driven by
+                    // the Blend slider, decides the final regions, not banding.
+                    autoColors: false, simplicity: min(1.0, max(0.0, options.simplicity)),
                     smoothing: options.smoothing, straighten: options.straighten))
         }
         let svg = SVGExport.toSVG(doc, smoothing: options.smoothing)

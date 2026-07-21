@@ -48,16 +48,22 @@ public enum GradientMode {
 
         // Merge adjacent bands of the same object (light→mid→shadow tones) into
         // one region so each becomes a single path filled with a gradient that
-        // spans its full shading — fewer paths, richer gradients. Then trace via
-        // the shared-edge planar map (gap-free) and fit a gradient per face.
+        // spans its full shading — fewer paths, richer gradients. Merging is driven
+        // by real gradient-fit error (moment-based planar SSE), not raw colour
+        // distance: a candidate pair merges only while the plane through the union
+        // still explains it. Then trace via the shared-edge planar map (gap-free)
+        // and fit a gradient per face.
         let s = min(1.0, max(0.0, config.simplicity))
-        let areaFraction = 0.0004 + 0.0012 * s
-        let minArea = Int(Double(img.width * img.height) * areaFraction)
-        // Higher simplicity → merge more distant bands → fewer, richer gradients.
-        let bandMerge = 26.0 + 60.0 * s
-        let (labels, colors) = ComponentMerge.merge(
-            indices: q.indices, palette: q.palette, width: img.width, height: img.height,
-            minArea: minArea, colorThreshold: bandMerge * bandMerge)
+        // Blend τ: the per-(smaller-region)-pixel excess SSE tolerated when forcing
+        // two regions onto one plane. Low Blend → tight (many regions); high →
+        // coalescing. The mapping is calibrated so the default Blend keeps the
+        // gradient eval rows above their floors while cutting shape count.
+        let tau = 150.0 + 1200.0 * s
+        let areaFraction = 0.00004 + 0.0002 * s
+        let minArea = max(8, Int(Double(img.width * img.height) * areaFraction))
+        let (labels, colors) = GradientRegions.segment(
+            indices: q.indices, palette: q.palette, img: img, width: img.width, height: img.height,
+            minArea: minArea, tau: tau)
         let refineOpt = RefineOptions(
             tolerance: config.epsilon * 1.8, cornerAngle: 32, straighten: config.straighten,
             smoothing: config.smoothing)
@@ -78,7 +84,7 @@ public enum GradientMode {
                 }
             }
             let fallback = face.label < colors.count ? colors[face.label] : (0, 0, 0)
-            let paint = GradientFit.fit(
+            let paint = GradientFit.fitRegion(
                 img: img, labels: labels, label: face.label,
                 bbox: (minx, miny, maxx, maxy), fallback: fallback, stops: config.stops)
             // Refined region boundaries; gradient regions are blobby, so no

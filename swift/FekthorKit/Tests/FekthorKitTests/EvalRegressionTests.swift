@@ -15,8 +15,8 @@ final class EvalRegressionTests: XCTestCase {
         ("artist-lineart", .strokes, 0.815),  // baseline 0.845; plan 03 held fidelity 0.976→0.977
         ("artist-flat", .shapes, 0.696),  // baseline 0.726 (was 0.679)
         ("thor-flat", .shapes, 0.363),  // baseline 0.393 (was 0.396)
-        ("artist-3d", .gradient, 0.45),  // baseline 0.483 (was 0.481)
-        ("thor-3d", .gradient, 0.20),  // baseline 0.230 (was 0.219)
+        ("artist-3d", .gradient, 0.465),  // plan 05 baseline 0.495 (moment merge + radial)
+        ("thor-3d", .gradient, 0.23),  // plan 05 baseline 0.260 (was 0.232)
     ]
 
     /// Repo-root `fixtures/inputs`, resolved from this source file's location.
