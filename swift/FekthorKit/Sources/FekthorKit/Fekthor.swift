@@ -18,6 +18,10 @@ public enum Fekthor {
         public var autoColors: Bool
         /// Minimum source fraction for an auto-detected flat colour.
         public var autoColorMinFraction: Double
+        /// Flatten strength (0…1, Shapes only): collapse shade families (same hue,
+        /// different lightness) into flat colours via the hue-weighted Oklab metric.
+        /// 0 = byte-identical to the non-flatten pipeline (plan 07).
+        public var flatten: Double
         /// Overrides the estimated stroke width in Strokes mode (adjustable).
         public var strokeWidth: Double?
         /// Uniform width: every stroke shares the median width (no manual override).
@@ -33,7 +37,7 @@ public enum Fekthor {
         public init(
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
             simplicity: Double = 0.3, smoothing: Double = 1.0, straighten: Double = 0.5,
-            autoColors: Bool = true, autoColorMinFraction: Double = 0.004,
+            autoColors: Bool = true, autoColorMinFraction: Double = 0.004, flatten: Double = 0,
             strokeWidth: Double? = nil, uniformStrokeWidth: Bool = false,
             strokeSource: StrokeSource = .auto, strokeCap: LineCap = .round, taper: Bool = false,
             lineColor: RGB? = nil
@@ -47,6 +51,7 @@ public enum Fekthor {
             self.straighten = straighten
             self.autoColors = autoColors
             self.autoColorMinFraction = autoColorMinFraction
+            self.flatten = flatten
             self.strokeWidth = strokeWidth
             self.uniformStrokeWidth = uniformStrokeWidth
             self.strokeSource = strokeSource
@@ -91,7 +96,8 @@ public enum Fekthor {
                     colors: options.colors, iters: 8, epsilon: options.epsilon,
                     simplicity: options.simplicity, autoColors: options.autoColors,
                     smoothing: options.smoothing, straighten: options.straighten,
-                    autoColorMinFraction: options.autoColorMinFraction))
+                    autoColorMinFraction: options.autoColorMinFraction,
+                    flatten: options.flatten))
             doc = output.document
             conversionDetail = output.detail
         case .strokes:

@@ -18,10 +18,13 @@ public struct ShapesConfig {
     public var straighten: Double
     /// Minimum source fraction for auto-colour palette entries.
     public var autoColorMinFraction: Double
+    /// Flatten strength (0…1): collapse shade families via the hue-weighted Oklab
+    /// metric. 0 keeps the pipeline byte-identical to the non-flatten path.
+    public var flatten: Double
     public init(
         colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, simplicity: Double = 0.3,
         autoColors: Bool = true, smoothing: Double = 1.0, straighten: Double = 0.5,
-        autoColorMinFraction: Double = 0.004
+        autoColorMinFraction: Double = 0.004, flatten: Double = 0
     ) {
         self.colors = colors
         self.iters = iters
@@ -31,6 +34,7 @@ public struct ShapesConfig {
         self.smoothing = smoothing
         self.straighten = straighten
         self.autoColorMinFraction = autoColorMinFraction
+        self.flatten = flatten
     }
 }
 
@@ -38,6 +42,34 @@ public enum ShapesMode {
     public struct Output {
         public var document: VectorDocument
         public var detail: [String: Double]
+    }
+
+    /// Distinct-colour guard for family clustering (flatten-d² units): once every
+    /// remaining palette pair is farther apart than this, clustering stops even if
+    /// more than the Colours count remain. Sits above a typical shade family's
+    /// spread but below distinct hues, so shades collapse while cape-red vs
+    /// background-red, black eyes and tiny accents survive any Flatten value.
+    static let flattenSeparation = 0.10
+
+    /// Collapse region labels that share an identical colour into one label, so
+    /// PlanarMap emits a single flat multi-region face per colour. Order follows
+    /// first appearance in `colors` (deterministic — no dictionary order leaks).
+    static func groupByColour(_ labels: [Int], _ colors: [RGB]) -> (labels: [Int], colors: [RGB]) {
+        var keyToLabel: [Int: Int] = [:]
+        var grouped: [RGB] = []
+        var map = [Int](repeating: 0, count: colors.count)
+        for (i, c) in colors.enumerated() {
+            let key = Int(c.r) << 16 | Int(c.g) << 8 | Int(c.b)
+            if let l = keyToLabel[key] {
+                map[i] = l
+            } else {
+                let l = grouped.count
+                keyToLabel[key] = l
+                grouped.append(c)
+                map[i] = l
+            }
+        }
+        return (labels.map { map[$0] }, grouped)
     }
 
     public static func run(_ img: RasterImage, config: ShapesConfig = ShapesConfig())
@@ -50,13 +82,25 @@ public enum ShapesMode {
         -> Output
     {
         let alphaStats = AlphaLabels.stats(img)
-        let q =
+        let flattenOn = config.flatten > 0
+        // Flatten quantises *fine* first, then collapses shade families down to the
+        // Colours count (never re-runs k-means at a lower k — that reintroduces RGB
+        // mud). At flatten=0 the counts and path are unchanged (byte-identical).
+        let fineColors = flattenOn ? 32 : max(2, config.colors)
+        let qFine =
             config.autoColors
             ? AlphaLabels.quantize(
-                img, maxColors: max(2, config.colors),
+                img, maxColors: fineColors,
                 minFraction: config.autoColorMinFraction, alphaStats: alphaStats,
                 exactPalette: config.autoColorMinFraction <= 0.002)
-            : ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
+            : ColorQuantizer.quantize(
+                img, k: flattenOn ? 32 : config.colors, iters: config.iters)
+        let q =
+            flattenOn
+            ? PaletteFamily.reduce(
+                qFine, targetColors: max(2, config.colors), flatten: config.flatten,
+                separation: ShapesMode.flattenSeparation)
+            : qFine
         let transparentLabel = AlphaLabels.transparentLabel(
             paletteCount: q.palette.count, alphaStats: alphaStats)
         let quantized = AlphaLabels.withTransparentLabel(
@@ -65,7 +109,29 @@ public enum ShapesMode {
         // Optionally merge similar / small regions for cleaner, simpler shapes.
         let labels: [Int]
         let colors: [RGB]
-        if config.simplicity > 0 {
+        if flattenOn {
+            // Flatten region merging: touching shade bands collapse under the Oklab
+            // flatten metric and every merged region takes its **dominant family
+            // colour** (flat, never a blended mean). Merging stays per-component so
+            // boundaries stay simple (already-flat art keeps its low node count and
+            // its distinct large colours), while the distinct-colour guard keeps
+            // small far-hued features (black eyes, a red accent) at any Flatten value.
+            let s = min(1.0, max(0.0, config.simplicity))
+            let minArea = Int(
+                Double(img.width * img.height) * (0.0006 * s + 0.0006 * config.flatten))
+            let colorThreshold = 0.006 + 0.012 * config.flatten
+            let (rawLabels, rawColors) = ComponentMerge.merge(
+                indices: quantized.indices, palette: quantized.palette,
+                width: img.width, height: img.height, minArea: minArea,
+                colorThreshold: colorThreshold, flatten: config.flatten,
+                distinctGuard: ShapesMode.flattenSeparation)
+            // Group same-colour regions into one flat face. ComponentMerge already
+            // absorbed specks (so boundaries stay clean and node counts low); merging
+            // the face *labels* by colour then keeps the fill count at ~the palette
+            // size — a shaded source becomes a handful of flat fills, while already
+            // flat art is unchanged (its regions were distinct colours anyway).
+            (labels, colors) = ShapesMode.groupByColour(rawLabels, rawColors)
+        } else if config.simplicity > 0 {
             let s = min(1.0, max(0.0, config.simplicity))
             let minArea = Int(Double(img.width * img.height) * 0.0006 * s)
             let colorThreshold = 40.0 * 40.0 * s

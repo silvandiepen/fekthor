@@ -15,9 +15,25 @@ public enum ComponentMerge {
         return dr * dr + dg * dg + db * db
     }
 
+    /// Region colour distance. At `flatten == 0` this is Euclidean RGB (unchanged,
+    /// byte-identical). When flattening, region means convert to Oklab and use the
+    /// single shared flatten metric (`colorThreshold` is then an Oklab-d² value).
+    /// Region merging stays **adjacency-based** — only touching regions merge —
+    /// unlike the global palette family clustering in `PaletteFamily`.
+    @inline(__always)
+    static func metric(
+        _ a: (Double, Double, Double), _ b: (Double, Double, Double), flatten: Double
+    ) -> Double {
+        if flatten <= 0 { return dist2(a, b) }
+        let la = OklabColor.from(r: a.0, g: a.1, b: a.2)
+        let lb = OklabColor.from(r: b.0, g: b.1, b: b.2)
+        return OklabColor.flattenDistance(la, lb, flatten: flatten)
+    }
+
     public static func merge(
         indices: [Int], palette: [RGB], width w: Int, height h: Int,
-        minArea: Int, colorThreshold: Double
+        minArea: Int, colorThreshold: Double, flatten: Double = 0,
+        distinctGuard: Double = .greatestFiniteMagnitude
     ) -> (labels: [Int], colors: [RGB]) {
         let n = w * h
         var comp = [Int](repeating: -1, count: n)
@@ -125,7 +141,7 @@ public enum ComponentMerge {
                 var changed = false
                 for c in 0..<count where find(c) == c {
                     for nb in neighbors(c) where nb > c {
-                        if dist2(color(c), color(nb)) < colorThreshold {
+                        if metric(color(c), color(nb), flatten: flatten) < colorThreshold {
                             union(c, nb)
                             changed = true
                         }
@@ -146,7 +162,7 @@ public enum ComponentMerge {
                     var bestd = Double.greatestFiniteMagnitude
                     let cc = color(c)
                     for nb in nbs {
-                        let d = dist2(cc, color(nb))
+                        let d = metric(cc, color(nb), flatten: flatten)
                         if d < bestd {
                             bestd = d
                             best = nb
@@ -161,12 +177,41 @@ public enum ComponentMerge {
                         let neighborRGB = nbs.map { rgb(color($0)) }
                         if !ColorQuantizer.isBlend(currentRGB, neighborRGB) { continue }
                     }
+                    // Flatten distinct-colour guard: a small feature whose nearest
+                    // neighbour is a different hue (black eyes ↔ skin, a red accent ↔
+                    // its ground) stays — it survives any Flatten value (plan 04).
+                    if flatten > 0 && bestd > distinctGuard { continue }
                     if best >= 0 {
                         union(c, best)
                         changed = true
                     }
                 }
                 if !changed { break }
+            }
+        }
+
+        // A merged region's colour. flatten=0: the area-weighted RGB **mean**
+        // (unchanged, byte-identical). flatten>0: the **dominant** source palette
+        // entry — the flat family colour covering the most pixels (mode, not mean,
+        // tie-break lower index), so a shade family never becomes a muddy average
+        // (plan 07 §3). Built once per root from a pixel pass over the source index.
+        var rootDominant: [Int: Int] = [:]
+        if flatten > 0 {
+            var rootCounts: [Int: [Int: Int]] = [:]
+            for p in 0..<n {
+                let r = find(comp[p])
+                rootCounts[r, default: [:]][indices[p], default: 0] += 1
+            }
+            for (r, counts) in rootCounts {
+                var bestIdx = Int.max
+                var bestCount = -1
+                for (idx, cnt) in counts {
+                    if cnt > bestCount || (cnt == bestCount && idx < bestIdx) {
+                        bestCount = cnt
+                        bestIdx = idx
+                    }
+                }
+                rootDominant[r] = bestIdx
             }
         }
 
@@ -182,13 +227,17 @@ public enum ComponentMerge {
                 let l = colors.count
                 rootLabel[r] = l
                 labels[p] = l
-                let c = color(r)
-                colors.append(
-                    (
-                        UInt8(min(255, max(0, c.0.rounded()))),
-                        UInt8(min(255, max(0, c.1.rounded()))),
-                        UInt8(min(255, max(0, c.2.rounded())))
-                    ))
+                if flatten > 0, let dom = rootDominant[r], dom >= 0, dom < palette.count {
+                    colors.append(palette[dom])
+                } else {
+                    let c = color(r)
+                    colors.append(
+                        (
+                            UInt8(min(255, max(0, c.0.rounded()))),
+                            UInt8(min(255, max(0, c.1.rounded()))),
+                            UInt8(min(255, max(0, c.2.rounded())))
+                        ))
+                }
             }
         }
         return (labels, colors)

@@ -22,7 +22,7 @@ case "eval":
 default:
     fail(
         "usage:\n"
-            + "  fekthor process <input> [--mode shapes|strokes|gradient] [--preset logo] [--colors N] [--epsilon E] [--min-area A] [--out DIR]\n"
+            + "  fekthor process <input> [--mode shapes|strokes|gradient] [--preset logo] [--colors N] [--epsilon E] [--flatten 0..1] [--min-area A] [--out DIR]\n"
             + "  fekthor eval [--fixtures DIR] [--out DIR] [--json]")
 }
 
@@ -42,6 +42,7 @@ func runProcess(_ args: [String]) {
     var straighten = 0.5
     var autoColors = true
     var autoColorMinFraction = 0.004
+    var flatten = 0.0
     var out = "out"
 
     var i = 0
@@ -57,6 +58,9 @@ func runProcess(_ args: [String]) {
         case "--simplicity": i += 1; simplicity = Double(args[i]) ?? simplicity
         case "--smoothing": i += 1; smoothing = Double(args[i]) ?? smoothing
         case "--straighten": i += 1; straighten = Double(args[i]) ?? straighten
+        case "--flatten":
+            i += 1
+            flatten = min(1.0, max(0.0, Double(args[i]) ?? flatten))
         case "--auto-colors": autoColors = true
         case "--fixed-colors": autoColors = false
         case "--preset":
@@ -88,7 +92,8 @@ func runProcess(_ args: [String]) {
             options: Fekthor.Options(
                 colors: colors, epsilon: epsilon, minArea: minArea,
                 simplicity: simplicity, smoothing: smoothing, straighten: straighten,
-                autoColors: autoColors, autoColorMinFraction: autoColorMinFraction))
+                autoColors: autoColors, autoColorMinFraction: autoColorMinFraction,
+                flatten: flatten))
 
         try FileManager.default.createDirectory(
             atPath: out, withIntermediateDirectories: true)
