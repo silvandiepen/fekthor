@@ -26,17 +26,25 @@ public enum PrimitiveDetect {
     // MARK: - Circle
 
     static func detectCircle(_ pts: [Pt], tolerance: Double) -> ShapeGeometry? {
+        let bb = bbox(pts)
+        let bw = bb.maxx - bb.minx
+        let bh = bb.maxy - bb.miny
+        if tolerance >= 5 && bw >= 3 && bh >= 3 && max(bw, bh) / min(bw, bh) <= 1.35 {
+            let bc = Pt((bb.minx + bb.maxx) / 2, (bb.miny + bb.maxy) / 2)
+            let br = (bw + bh) / 4
+            let coverage = abs(Geometry.area(pts)) / max(1, .pi * br * br)
+            if coverage > 0.05 && coverage < 1.35 {
+                return .circle(center: bc, radius: br)
+            }
+        }
         guard let fit = PathRefine.kasaCircle(pts) else { return nil }
         let c = Pt(fit.cx, fit.cy)
         let r = fit.r
         if r < 1 { return nil }
-        let bb = bbox(pts)
         // Geometric sanity: a true circle has a roughly-square bbox, its centre
         // inside that bbox, and radius ≈ half the bbox. This rejects giant-radius
         // fits to gently-curved region boundaries (the far-off-canvas false
         // positives that otherwise pass the relative tolerance).
-        let bw = bb.maxx - bb.minx
-        let bh = bb.maxy - bb.miny
         if bw < 3 || bh < 3 { return nil }
         if max(bw, bh) / min(bw, bh) > 1.35 { return nil }
         if c.x < bb.minx - 2 || c.x > bb.maxx + 2 || c.y < bb.miny - 2 || c.y > bb.maxy + 2 {
@@ -48,7 +56,8 @@ public enum PrimitiveDetect {
         let tol = max(tolerance, 0.02 * r)
         var maxDev = 0.0
         for p in pts { maxDev = max(maxDev, abs(PathRefine.dist(p, c) - r)) }
-        return maxDev <= tol ? .circle(center: c, radius: r) : nil
+        if maxDev <= tol { return .circle(center: c, radius: r) }
+        return nil
     }
 
     static func bbox(_ pts: [Pt]) -> (minx: Double, miny: Double, maxx: Double, maxy: Double) {

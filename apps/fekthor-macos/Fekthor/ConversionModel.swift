@@ -10,7 +10,9 @@ final class ConversionModel: ObservableObject {
     @Published var sourceImage: NSImage?
     @Published var vectorImage: NSImage?
     @Published var mode: Mode = .shapes
+    @Published var logoPreset: Bool = false
     @Published var autoColors: Bool = true
+    @Published var autoColorMinFraction: Double = 0.004
     @Published var colors: Double = 16
     /// 0 = coarse (fewer nodes), 1 = fine (more detail). Maps to DP tolerance.
     @Published var detail: Double = 0.55
@@ -132,6 +134,7 @@ final class ConversionModel: ObservableObject {
         let options = Fekthor.Options(
             colors: Int(colors), epsilon: eps, simplicity: simplicity, smoothing: smoothing,
             straighten: straighten, autoColors: autoColors,
+            autoColorMinFraction: autoColorMinFraction,
             strokeWidth: strokeWidthAuto ? nil : strokeWidth,
             uniformStrokeWidth: uniformStrokeWidth, strokeSource: strokeSource,
             strokeCap: strokeCap, taper: taper, lineColor: lineRGB)
@@ -211,6 +214,17 @@ final class ConversionModel: ObservableObject {
             UInt8((ns.greenComponent * 255).rounded()),
             UInt8((ns.blueComponent * 255).rounded())
         )
+    }
+
+    func applyLogoPreset() {
+        mode = .shapes
+        autoColors = true
+        autoColorMinFraction = 0.002
+        simplicity = 0.10
+        detail = 0.85
+        straighten = 0.80
+        smoothing = 0.35
+        convert()
     }
 
     func loadLaunchArgumentIfPresent() {

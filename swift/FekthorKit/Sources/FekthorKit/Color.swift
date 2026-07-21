@@ -8,6 +8,16 @@ public struct Quantized {
     public let palette: [RGB]
     /// One palette index per pixel, row-major.
     public let indices: [Int]
+    /// Palette entries replaced by a dominant exact source colour.
+    public let paletteExactCount: Int
+
+    public init(width: Int, height: Int, palette: [RGB], indices: [Int], paletteExactCount: Int = 0) {
+        self.width = width
+        self.height = height
+        self.palette = palette
+        self.indices = indices
+        self.paletteExactCount = paletteExactCount
+    }
 }
 
 public enum ColorQuantizer {
@@ -41,7 +51,7 @@ public enum ColorQuantizer {
     }
 
     /// Assign every pixel to the nearest palette colour.
-    static func assign(_ img: RasterImage, palette: [RGB]) -> Quantized {
+    static func assign(_ img: RasterImage, palette: [RGB], paletteExactCount: Int = 0) -> Quantized {
         let n = img.width * img.height
         var indices = [Int](repeating: 0, count: n)
         for i in 0..<n {
@@ -58,7 +68,9 @@ public enum ColorQuantizer {
             }
             indices[i] = best
         }
-        return Quantized(width: img.width, height: img.height, palette: palette, indices: indices)
+        return Quantized(
+            width: img.width, height: img.height, palette: palette, indices: indices,
+            paletteExactCount: paletteExactCount)
     }
 
     /// Detect the image's dominant flat colours, excluding anti-aliasing.
@@ -67,58 +79,124 @@ public enum ColorQuantizer {
     /// real colours, so a frequency-ranked, spread-filtered pick keeps the real
     /// flat colours and drops the blends. Every pixel then snaps to the nearest.
     public static func quantizeAuto(
-        _ img: RasterImage, maxColors: Int, minFraction: Double
+        _ img: RasterImage, maxColors: Int, minFraction: Double, exactPalette: Bool = true
     ) -> Quantized {
+        struct Bucket {
+            var count = 0
+            var sum = (0, 0, 0)
+            var exact: [Int: Int] = [:]
+
+            mutating func add(_ r: Int, _ g: Int, _ b: Int) {
+                count += 1
+                sum.0 += r
+                sum.1 += g
+                sum.2 += b
+                exact[(r << 16) | (g << 8) | b, default: 0] += 1
+            }
+
+            var mean: RGB {
+                (
+                    UInt8(sum.0 / count), UInt8(sum.1 / count),
+                    UInt8(sum.2 / count)
+                )
+            }
+
+            var mode: (color: RGB, count: Int) {
+                var bestKey = 0
+                var bestCount = -1
+                for (key, c) in exact {
+                    if c > bestCount || (c == bestCount && key < bestKey) {
+                        bestKey = key
+                        bestCount = c
+                    }
+                }
+                return (
+                    (
+                        UInt8((bestKey >> 16) & 0xff),
+                        UInt8((bestKey >> 8) & 0xff),
+                        UInt8(bestKey & 0xff)
+                    ),
+                    bestCount
+                )
+            }
+
+            func representative(exactPalette: Bool) -> (color: RGB, exact: Bool) {
+                if !exactPalette { return (mean, false) }
+                let m = mode
+                if Double(m.count) >= Double(count) * 0.6 {
+                    return (m.color, true)
+                }
+                return (mean, false)
+            }
+        }
+
         let n = img.width * img.height
-        var hist: [Int: (count: Int, sum: (Int, Int, Int))] = [:]
+        var hist: [Int: Bucket] = [:]
         for i in 0..<n {
             let o = i * 4
             let r = Int(img.data[o]), g = Int(img.data[o + 1]), b = Int(img.data[o + 2])
             let key = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3)
-            var e = hist[key] ?? (0, (0, 0, 0))
-            e.count += 1
-            e.sum.0 += r
-            e.sum.1 += g
-            e.sum.2 += b
+            var e = hist[key] ?? Bucket()
+            e.add(r, g, b)
             hist[key] = e
         }
-        var buckets: [(count: Int, color: RGB)] = hist.values.map { v in
-            (
-                v.count,
-                (
-                    UInt8(v.sum.0 / v.count), UInt8(v.sum.1 / v.count),
-                    UInt8(v.sum.2 / v.count)
-                )
-            )
+        var buckets: [(count: Int, color: RGB, mean: RGB, exact: Bool)] = hist.values.map { v in
+            let rep = v.representative(exactPalette: exactPalette)
+            return (v.count, rep.color, v.mean, rep.exact)
         }
         buckets.sort {
             if $0.count != $1.count { return $0.count > $1.count }
-            return $0.color < $1.color
+            if $0.color.r != $1.color.r { return $0.color.r < $1.color.r }
+            if $0.color.g != $1.color.g { return $0.color.g < $1.color.g }
+            return $0.color.b < $1.color.b
         }
-        let minCount = Int(Double(n) * minFraction)
+        let minCount = max(1, Int(Double(n) * minFraction))
         let minSep2 = 28 * 28
-        var palette: [RGB] = []
+        var selected: [(color: RGB, exact: Bool)] = []
+        func selectedColors() -> [RGB] { selected.map(\.color) }
         // Pass 1: the frequent flat colours.
         for b in buckets {
-            if palette.count >= maxColors { break }
+            if selected.count >= maxColors { break }
             if b.count < minCount { break }
-            if palette.allSatisfy({ dist2($0, b.color) >= minSep2 }) {
-                palette.append(b.color)
+            if selectedColors().allSatisfy({ dist2($0, b.color) >= minSep2 }) {
+                selected.append((b.color, b.exact))
             }
         }
-        if palette.isEmpty { palette.append(buckets.first?.color ?? (0, 0, 0)) }
+        if selected.isEmpty {
+            selected.append((buckets.first?.color ?? (0, 0, 0), buckets.first?.exact == true))
+        }
+        if exactPalette { selected = pruneBlendPalette(selected) }
         // Pass 2: keep smaller *distinct* feature colours (e.g. tiny black eyes)
         // but drop true anti-aliasing — colours that lie on the blend line
         // between two palette colours.
-        let noiseFloor = max(6, minCount / 12)
+        let noiseFloor = max(1, minCount / 12)
         for b in buckets {
-            if palette.count >= maxColors { break }
+            if selected.count >= maxColors { break }
             if b.count >= minCount || b.count < noiseFloor { continue }
-            if !palette.allSatisfy({ dist2($0, b.color) >= minSep2 }) { continue }
-            if isBlend(b.color, palette) { continue }
-            palette.append(b.color)
+            if !selectedColors().allSatisfy({ dist2($0, b.color) >= minSep2 }) { continue }
+            if isBlend(b.mean, selectedColors()) { continue }
+            selected.append((b.color, b.exact))
         }
-        return assign(img, palette: palette)
+        let palette = selectedColors()
+        let exactCount = selected.filter(\.exact).count
+        return assign(img, palette: palette, paletteExactCount: exactCount)
+    }
+
+    static func pruneBlendPalette(_ selected: [(color: RGB, exact: Bool)])
+        -> [(color: RGB, exact: Bool)]
+    {
+        guard selected.count > 2 else { return selected }
+        var kept: [(color: RGB, exact: Bool)] = []
+        for i in selected.indices {
+            var others: [RGB] = []
+            others.reserveCapacity(selected.count - 1)
+            for j in selected.indices where j != i { others.append(selected[j].color) }
+            if isBlend(selected[i].color, others) {
+                continue
+            }
+            kept.append(selected[i])
+        }
+        return kept.count >= 2 ? kept : selected
     }
 
     /// Deterministic coarse-histogram seeded k-means (Lloyd) over RGB.

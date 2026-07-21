@@ -64,6 +64,7 @@ public struct RasterImage: Sendable {
             return true
         }
         if !ok { throw ImageError.load("cannot create bitmap context") }
+        unpremultiplyRGBA(&data)
         return RasterImage(width: width, height: height, data: data)
     }
 
@@ -99,11 +100,12 @@ public struct RasterImage: Sendable {
         return ok ? RasterImage(width: nw, height: nh, data: out) : self
     }
 
-    /// Build a CGImage from the buffer (for Vision / display).
+    /// Build a CGImage from the buffer for display/export.
     public func cgImage() -> CGImage? {
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let bitmap = CGImageAlphaInfo.premultipliedLast.rawValue
         var d = data
+        Self.premultiplyRGBA(&d)
         return d.withUnsafeMutableBytes { buf -> CGImage? in
             guard
                 let ctx = CGContext(
@@ -124,5 +126,31 @@ public struct RasterImage: Sendable {
         else { throw ImageError.save("cannot create destination") }
         CGImageDestinationAddImage(dest, cg, nil)
         if !CGImageDestinationFinalize(dest) { throw ImageError.save("finalize failed") }
+    }
+
+    static func unpremultiplyRGBA(_ data: inout [UInt8]) {
+        var i = 0
+        while i < data.count {
+            let a = Int(data[i + 3])
+            if a > 0 && a < 255 {
+                data[i] = UInt8(min(255, (Int(data[i]) * 255 + a / 2) / a))
+                data[i + 1] = UInt8(min(255, (Int(data[i + 1]) * 255 + a / 2) / a))
+                data[i + 2] = UInt8(min(255, (Int(data[i + 2]) * 255 + a / 2) / a))
+            }
+            i += 4
+        }
+    }
+
+    static func premultiplyRGBA(_ data: inout [UInt8]) {
+        var i = 0
+        while i < data.count {
+            let a = Int(data[i + 3])
+            if a < 255 {
+                data[i] = UInt8((Int(data[i]) * a + 127) / 255)
+                data[i + 1] = UInt8((Int(data[i + 1]) * a + 127) / 255)
+                data[i + 2] = UInt8((Int(data[i + 2]) * a + 127) / 255)
+            }
+            i += 4
+        }
     }
 }

@@ -15,7 +15,10 @@ public enum Rasterizer {
 
     /// Render the document. `scale` > 1 renders a crisper, higher-resolution
     /// raster (for zoomable previews); geometry is resolution-independent.
-    public static func render(_ doc: VectorDocument, smoothing: Double = 1, scale: Double = 1)
+    public static func render(
+        _ doc: VectorDocument, smoothing: Double = 1, scale: Double = 1,
+        background: RGB? = (255, 255, 255)
+    )
         -> RasterImage
     {
         let w = max(1, Int((Double(doc.width) * scale).rounded()))
@@ -29,9 +32,12 @@ public enum Rasterizer {
                     bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
             else { return }
-            // White base so uncovered pixels compare against a neutral background.
-            ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
-            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            // White base by default so uncovered pixels compare against a
+            // neutral background; tests can request nil for transparent logos.
+            if let background {
+                ctx.setFillColor(cgColor([background.r, background.g, background.b]))
+                ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            }
             // Flip to a top-left origin so points map directly, then apply scale.
             ctx.translateBy(x: 0, y: CGFloat(h))
             ctx.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
@@ -79,6 +85,7 @@ public enum Rasterizer {
                 }
             }
         }
+        RasterImage.unpremultiplyRGBA(&data)
         return RasterImage(width: w, height: h, data: data)
     }
 }

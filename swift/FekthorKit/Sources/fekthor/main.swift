@@ -22,7 +22,7 @@ case "eval":
 default:
     fail(
         "usage:\n"
-            + "  fekthor process <input> [--mode shapes|strokes|gradient] [--colors N] [--epsilon E] [--min-area A] [--out DIR]\n"
+            + "  fekthor process <input> [--mode shapes|strokes|gradient] [--preset logo] [--colors N] [--epsilon E] [--min-area A] [--out DIR]\n"
             + "  fekthor eval [--fixtures DIR] [--out DIR] [--json]")
 }
 
@@ -37,6 +37,11 @@ func runProcess(_ args: [String]) {
     var colors = 16
     var epsilon = 1.0
     var minArea = 6.0
+    var simplicity = 0.3
+    var smoothing = 1.0
+    var straighten = 0.5
+    var autoColors = true
+    var autoColorMinFraction = 0.004
     var out = "out"
 
     var i = 0
@@ -49,6 +54,27 @@ func runProcess(_ args: [String]) {
         case "--colors": i += 1; colors = Int(args[i]) ?? colors
         case "--epsilon": i += 1; epsilon = Double(args[i]) ?? epsilon
         case "--min-area": i += 1; minArea = Double(args[i]) ?? minArea
+        case "--simplicity": i += 1; simplicity = Double(args[i]) ?? simplicity
+        case "--smoothing": i += 1; smoothing = Double(args[i]) ?? smoothing
+        case "--straighten": i += 1; straighten = Double(args[i]) ?? straighten
+        case "--auto-colors": autoColors = true
+        case "--fixed-colors": autoColors = false
+        case "--preset":
+            i += 1
+            guard i < args.count else { fail("missing --preset value") }
+            switch args[i] {
+            case "logo":
+                autoColors = true
+                autoColorMinFraction = 0.002
+                simplicity = 0.10
+                // CLI epsilon is the direct engine tolerance; this matches the
+                // app's Detail 85% mapping (4.2 - 3.9 * 0.85).
+                epsilon = 0.885
+                straighten = 0.80
+                smoothing = 0.35
+            default:
+                fail("bad --preset")
+            }
         case "--out": i += 1; out = args[i]
         default: fail("unknown argument: \(args[i])")
         }
@@ -59,7 +85,10 @@ func runProcess(_ args: [String]) {
         let img = try RasterImage.load(path: input)
         let result = try Fekthor.convert(
             img, mode: mode,
-            options: Fekthor.Options(colors: colors, epsilon: epsilon, minArea: minArea))
+            options: Fekthor.Options(
+                colors: colors, epsilon: epsilon, minArea: minArea,
+                simplicity: simplicity, smoothing: smoothing, straighten: straighten,
+                autoColors: autoColors, autoColorMinFraction: autoColorMinFraction))
 
         try FileManager.default.createDirectory(
             atPath: out, withIntermediateDirectories: true)
@@ -87,6 +116,8 @@ func runProcess(_ args: [String]) {
                 "simplicity": q.simplicity,
                 "detail": q.detail,
             ],
+            "detail": result.detail,
+            "background": result.detail["backgroundTransparent"] == 1 ? "transparent" : "solid",
         ]
         let json = try JSONSerialization.data(
             withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
@@ -190,7 +221,8 @@ func runEval(_ args: [String]) {
                 "simplicity": q.simplicity,
                 "nodes": nodes,
                 "paths": paths,
-                "detail": q.detail,
+                "detail": q.detail.merging(result.detail) { current, _ in current },
+                "background": result.detail["backgroundTransparent"] == 1 ? "transparent" : "solid",
             ])
         }
     }

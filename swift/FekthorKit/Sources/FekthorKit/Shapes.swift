@@ -16,9 +16,12 @@ public struct ShapesConfig {
     public var smoothing: Double
     /// Straighten strength (0…1): greedier line fitting for near-straight runs.
     public var straighten: Double
+    /// Minimum source fraction for auto-colour palette entries.
+    public var autoColorMinFraction: Double
     public init(
         colors: Int = 16, iters: Int = 8, epsilon: Double = 2.0, simplicity: Double = 0.3,
-        autoColors: Bool = true, smoothing: Double = 1.0, straighten: Double = 0.5
+        autoColors: Bool = true, smoothing: Double = 1.0, straighten: Double = 0.5,
+        autoColorMinFraction: Double = 0.004
     ) {
         self.colors = colors
         self.iters = iters
@@ -27,17 +30,37 @@ public struct ShapesConfig {
         self.autoColors = autoColors
         self.smoothing = smoothing
         self.straighten = straighten
+        self.autoColorMinFraction = autoColorMinFraction
     }
 }
 
 public enum ShapesMode {
+    public struct Output {
+        public var document: VectorDocument
+        public var detail: [String: Double]
+    }
+
     public static func run(_ img: RasterImage, config: ShapesConfig = ShapesConfig())
         -> VectorDocument
     {
+        runWithDetail(img, config: config).document
+    }
+
+    public static func runWithDetail(_ img: RasterImage, config: ShapesConfig = ShapesConfig())
+        -> Output
+    {
+        let alphaStats = AlphaLabels.stats(img)
         let q =
             config.autoColors
-            ? ColorQuantizer.quantizeAuto(img, maxColors: max(2, config.colors), minFraction: 0.004)
+            ? AlphaLabels.quantize(
+                img, maxColors: max(2, config.colors),
+                minFraction: config.autoColorMinFraction, alphaStats: alphaStats,
+                exactPalette: config.autoColorMinFraction <= 0.002)
             : ColorQuantizer.quantize(img, k: config.colors, iters: config.iters)
+        let transparentLabel = AlphaLabels.transparentLabel(
+            paletteCount: q.palette.count, alphaStats: alphaStats)
+        let quantized = AlphaLabels.withTransparentLabel(
+            img, quantized: q, transparentLabel: transparentLabel)
 
         // Optionally merge similar / small regions for cleaner, simpler shapes.
         let labels: [Int]
@@ -47,12 +70,14 @@ public enum ShapesMode {
             let minArea = Int(Double(img.width * img.height) * 0.0006 * s)
             let colorThreshold = 40.0 * 40.0 * s
             (labels, colors) = ComponentMerge.merge(
-                indices: q.indices, palette: q.palette, width: img.width, height: img.height,
+                indices: quantized.indices, palette: quantized.palette, width: img.width, height: img.height,
                 minArea: minArea, colorThreshold: colorThreshold)
         } else {
-            labels = q.indices
-            colors = q.palette
+            labels = quantized.indices
+            colors = quantized.palette
         }
+        let transparentOutputLabels = AlphaLabels.outputLabels(
+            labels: labels, indices: quantized.indices, transparentLabel: transparentLabel)
 
         // Shared-edge planar map with geometry refinement: adjacent regions use
         // identical refined boundary chains (no gaps), corners stay sharp, and
@@ -67,16 +92,100 @@ public enum ShapesMode {
         var doc = VectorDocument(width: img.width, height: img.height)
         var nextID = 0
         for face in faces {
+            if transparentOutputLabels.contains(face.label) { continue }
             let color = face.label < colors.count ? colors[face.label] : (0, 0, 0)
             guard let geometry = ShapeGeometryBuilder.build(
                 face: face, tolerance: config.epsilon, straighten: config.straighten,
-                detectPrimitives: true)
+                detectPrimitives: true,
+                primitiveTolerance: config.epsilon * (transparentLabel == nil ? 1.6 : 8.0))
             else { continue }
             doc.elements.append(
                 .fill(FillShape(id: "fill-\(nextID)", color: color, geometry: geometry)))
             nextID += 1
         }
-        return doc
+        return Output(
+            document: doc,
+            detail: [
+                "paletteExact": Double(q.paletteExactCount),
+                "backgroundTransparent": transparentLabel == nil ? 0 : 1,
+            ])
+    }
+}
+
+private enum AlphaLabels {
+    static let sentinel: RGB = (255, 0, 255)
+
+    static func stats(_ img: RasterImage) -> (meaningful: Bool, transparentCount: Int) {
+        let n = img.width * img.height
+        var low250 = 0
+        var low128 = 0
+        for i in 0..<n {
+            let a = img.data[i * 4 + 3]
+            if a < 250 { low250 += 1 }
+            if a < 128 { low128 += 1 }
+        }
+        return (Double(low250) >= Double(n) * 0.02 && low128 > 0, low128)
+    }
+
+    static func transparentLabel(
+        paletteCount: Int, alphaStats: (meaningful: Bool, transparentCount: Int)
+    ) -> Int? {
+        alphaStats.meaningful ? paletteCount : nil
+    }
+
+    static func quantize(
+        _ img: RasterImage, maxColors: Int, minFraction: Double,
+        alphaStats: (meaningful: Bool, transparentCount: Int), exactPalette: Bool
+    ) -> Quantized {
+        guard alphaStats.meaningful else {
+            return ColorQuantizer.quantizeAuto(
+                img, maxColors: maxColors, minFraction: minFraction, exactPalette: exactPalette)
+        }
+        let n = img.width * img.height
+        let opaqueCount = max(1, n - alphaStats.transparentCount)
+        var data: [UInt8] = []
+        data.reserveCapacity(opaqueCount * 4)
+        for i in 0..<n where img.data[i * 4 + 3] >= 128 {
+            let o = i * 4
+            data.append(img.data[o])
+            data.append(img.data[o + 1])
+            data.append(img.data[o + 2])
+            data.append(255)
+        }
+        let colourImage = RasterImage(width: opaqueCount, height: 1, data: data)
+        return ColorQuantizer.quantizeAuto(
+            colourImage, maxColors: maxColors, minFraction: minFraction,
+            exactPalette: exactPalette)
+    }
+
+    static func withTransparentLabel(
+        _ img: RasterImage, quantized q: Quantized, transparentLabel: Int?
+    ) -> Quantized {
+        guard let transparentLabel else { return q }
+        var palette = q.palette
+        palette.append(sentinel)
+        var indices = [Int](repeating: 0, count: img.width * img.height)
+        var sourceIndex = 0
+        for i in 0..<indices.count {
+            if img.data[i * 4 + 3] < 128 {
+                indices[i] = transparentLabel
+            } else {
+                indices[i] = q.indices[sourceIndex]
+                sourceIndex += 1
+            }
+        }
+        return Quantized(
+            width: img.width, height: img.height, palette: palette, indices: indices,
+            paletteExactCount: q.paletteExactCount)
+    }
+
+    static func outputLabels(labels: [Int], indices: [Int], transparentLabel: Int?) -> Set<Int> {
+        guard let transparentLabel else { return [] }
+        var out = Set<Int>()
+        for i in 0..<labels.count where indices[i] == transparentLabel {
+            out.insert(labels[i])
+        }
+        return out
     }
 }
 
@@ -87,13 +196,13 @@ public enum ShapeGeometryBuilder {
         face: PlanarMap.Face, tolerance: Double, straighten: Double, detectPrimitives: Bool,
         primitiveTolerance: Double? = nil
     ) -> ShapeGeometry? {
+        if detectPrimitives, face.rings.count == 1, let poly = face.rings.first,
+            let prim = PrimitiveDetect.detect(
+                poly, tolerance: primitiveTolerance ?? (tolerance * 1.6), straighten: straighten)
+        {
+            return prim
+        }
         if let refined = face.refined, !refined.isEmpty {
-            if detectPrimitives, refined.count == 1, let poly = face.rings.first,
-                let prim = PrimitiveDetect.detect(
-                    poly, tolerance: primitiveTolerance ?? (tolerance * 1.6), straighten: straighten)
-            {
-                return prim
-            }
             return .refined(refined)
         }
         // Fallback: legacy polygonal rings.

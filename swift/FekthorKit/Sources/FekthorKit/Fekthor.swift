@@ -16,6 +16,8 @@ public enum Fekthor {
         public var straighten: Double
         /// Auto-detect dominant colours (excludes anti-aliasing) vs fixed count.
         public var autoColors: Bool
+        /// Minimum source fraction for an auto-detected flat colour.
+        public var autoColorMinFraction: Double
         /// Overrides the estimated stroke width in Strokes mode (adjustable).
         public var strokeWidth: Double?
         /// Uniform width: every stroke shares the median width (no manual override).
@@ -31,7 +33,8 @@ public enum Fekthor {
         public init(
             colors: Int = 16, epsilon: Double = 1.0, minArea: Double = 6.0, threshold: UInt8 = 128,
             simplicity: Double = 0.3, smoothing: Double = 1.0, straighten: Double = 0.5,
-            autoColors: Bool = true, strokeWidth: Double? = nil, uniformStrokeWidth: Bool = false,
+            autoColors: Bool = true, autoColorMinFraction: Double = 0.004,
+            strokeWidth: Double? = nil, uniformStrokeWidth: Bool = false,
             strokeSource: StrokeSource = .auto, strokeCap: LineCap = .round, taper: Bool = false,
             lineColor: RGB? = nil
         ) {
@@ -43,6 +46,7 @@ public enum Fekthor {
             self.smoothing = smoothing
             self.straighten = straighten
             self.autoColors = autoColors
+            self.autoColorMinFraction = autoColorMinFraction
             self.strokeWidth = strokeWidth
             self.uniformStrokeWidth = uniformStrokeWidth
             self.strokeSource = strokeSource
@@ -59,6 +63,8 @@ public enum Fekthor {
         public var metrics: Metrics
         /// Mode-aware quality score (see `Quality`). Comparable across modes.
         public var quality: QualityScore
+        /// Conversion diagnostics that are not part of the quality formula.
+        public var detail: [String: Double]
     }
 
     public enum EngineError: Error, CustomStringConvertible {
@@ -76,14 +82,18 @@ public enum Fekthor {
         -> Result
     {
         let doc: VectorDocument
+        var conversionDetail: [String: Double] = [:]
         switch mode {
         case .shapes:
-            doc = ShapesMode.run(
+            let output = ShapesMode.runWithDetail(
                 img,
                 config: ShapesConfig(
                     colors: options.colors, iters: 8, epsilon: options.epsilon,
                     simplicity: options.simplicity, autoColors: options.autoColors,
-                    smoothing: options.smoothing, straighten: options.straighten))
+                    smoothing: options.smoothing, straighten: options.straighten,
+                    autoColorMinFraction: options.autoColorMinFraction))
+            doc = output.document
+            conversionDetail = output.detail
         case .strokes:
             doc = StrokesMode.run(
                 img,
@@ -111,6 +121,7 @@ public enum Fekthor {
         let quality = Quality.score(
             source: img, document: doc, rendered: rendered, mode: mode)
         return Result(
-            document: doc, svg: svg, rendered: rendered, metrics: metrics, quality: quality)
+            document: doc, svg: svg, rendered: rendered, metrics: metrics, quality: quality,
+            detail: conversionDetail)
     }
 }

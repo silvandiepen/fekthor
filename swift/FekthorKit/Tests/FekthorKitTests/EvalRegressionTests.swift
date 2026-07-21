@@ -13,8 +13,8 @@ final class EvalRegressionTests: XCTestCase {
     // arcs / cubics instead of over-tracking pixel noise).
     private let floors: [(fixture: String, mode: Mode, floor: Double)] = [
         ("artist-lineart", .strokes, 0.815),  // baseline 0.845; plan 03 held fidelity 0.976→0.977
-        ("artist-flat", .shapes, 0.69),  // baseline 0.726 (was 0.679)
-        ("thor-flat", .shapes, 0.36),  // baseline 0.393 (was 0.396)
+        ("artist-flat", .shapes, 0.696),  // baseline 0.726 (was 0.679)
+        ("thor-flat", .shapes, 0.363),  // baseline 0.393 (was 0.396)
         ("artist-3d", .gradient, 0.45),  // baseline 0.483 (was 0.481)
         ("thor-3d", .gradient, 0.20),  // baseline 0.230 (was 0.219)
     ]

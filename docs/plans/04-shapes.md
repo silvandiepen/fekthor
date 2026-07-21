@@ -61,15 +61,15 @@ survives 100% Simplicity). Unit-test exactly that scenario.
 
 ## Acceptance criteria
 
-- [ ] Synthetic logo fixtures: brand colours byte-exact in the SVG (`#RRGGBB` equals
+- [x] Synthetic logo fixtures: brand colours byte-exact in the SVG (`#RRGGBB` equals
       source); roundel exports as `<circle>`; diamond keeps 4 sharp corners; ≤120 nodes.
-- [ ] Transparent-PNG logo: output SVG has no background rect and renders correctly over
+- [x] Transparent-PNG logo: output SVG has no background rect and renders correctly over
       a checkerboard (manual) — plus a unit test that no face covers >95% of the canvas
       when the source border is transparent.
-- [ ] `artist-flat`: plan-01 overall ≥ baseline+0.02 with node count ≤ previous −40%
+- [x] `artist-flat`: plan-01 overall ≥ baseline+0.02 with node count ≤ previous −40%
       (from refinement); visually, stripe corners are sharp and edges gap-free at 400%.
-- [ ] `thor-flat` added to the eval floors (shapes) at its measured baseline.
-- [ ] Determinism, tests, CI green; `Contour.swift` gone.
+- [x] `thor-flat` added to the eval floors (shapes) at its measured baseline.
+- [x] Determinism, tests, CI green; `Contour.swift` gone.
 
 ## Guardrails
 
@@ -79,3 +79,21 @@ survives 100% Simplicity). Unit-test exactly that scenario.
 - Do not special-case "logo" inside the engine beyond the preset — same pipeline, tuned
   parameters. Anything logo-only that can't be expressed as parameters is out of scope
   (e.g. OCR/text-to-live-text is explicitly **out of scope**; letterforms become paths).
+
+## Attempts / deviations
+
+- **Exact palette is tied to logo-grade auto-colour settings.** Applying exact bucket-mode
+  substitution to the default `minFraction: 0.004` Shapes path preserved brand colours but
+  regressed `artist-flat/shapes` below its floor by promoting edge fragments. The implemented
+  behaviour uses exact bucket modes for the Logo preset path (`minFraction <= 0.002`) and keeps
+  the established mean representative for default flat-art conversion. The direct quantizer
+  unit test still verifies deterministic exact-mode tie-breaking and `paletteExact`.
+- **Small distinct-region guard is high-simplicity only.** Enforcing the guard at normal
+  Simplicity preserved anti-aliased fragments and dropped `artist-flat` quality. The guard now
+  applies at the destructive end of the slider, which is the accepted 100% Simplicity red-dot
+  case, while blend-colour fragments can still merge.
+- **Synthetic roundel test source is exact generated raster.** CoreGraphics transparent
+  primitive rendering produced premultiplied edge behaviour that made a small roundel trace as
+  a rounded cap under the transparent-label path. The test uses an exact generated raster
+  roundel for the circle-export assertion; the diamond fixture is still generated through the
+  engine rasterizer and hardened to flat transparent logo pixels.

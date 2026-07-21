@@ -259,6 +259,17 @@ private struct InspectorView: View {
                 }
                 .onChange(of: model.mode) { _, _ in model.convert() }
 
+                if model.mode == .shapes {
+                    Toggle("Logo", isOn: $model.logoPreset)
+                        .onChange(of: model.logoPreset) { _, enabled in
+                            if enabled {
+                                model.applyLogoPreset()
+                            } else {
+                                model.convert()
+                            }
+                        }
+                }
+
                 Picker("Resolution", selection: $model.resolution) {
                     Text("Fast · 512").tag(512)
                     Text("Balanced · 1024").tag(1024)

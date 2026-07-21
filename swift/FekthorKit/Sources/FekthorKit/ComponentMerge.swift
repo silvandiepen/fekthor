@@ -152,6 +152,15 @@ public enum ComponentMerge {
                             best = nb
                         }
                     }
+                    // Preserve intentional tiny details: if a component is far
+                    // from every neighbour, area alone must not erase it. The
+                    // configured threshold is squared RGB distance, so "3x" in
+                    // colour distance is 9x here.
+                    if colorThreshold >= 1500 && bestd > colorThreshold * 9 {
+                        let currentRGB = rgb(cc)
+                        let neighborRGB = nbs.map { rgb(color($0)) }
+                        if !ColorQuantizer.isBlend(currentRGB, neighborRGB) { continue }
+                    }
                     if best >= 0 {
                         union(c, best)
                         changed = true
@@ -183,5 +192,13 @@ public enum ComponentMerge {
             }
         }
         return (labels, colors)
+    }
+
+    static func rgb(_ c: (Double, Double, Double)) -> RGB {
+        (
+            UInt8(min(255, max(0, c.0.rounded()))),
+            UInt8(min(255, max(0, c.1.rounded()))),
+            UInt8(min(255, max(0, c.2.rounded())))
+        )
     }
 }

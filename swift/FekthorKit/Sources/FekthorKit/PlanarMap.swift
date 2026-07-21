@@ -190,6 +190,37 @@ public enum PlanarMap {
             return rp
         }
 
+        func legacyRing(_ pts: [Int], _ nodePositions: [Int]) -> [Pt] {
+            if nodePositions.isEmpty {
+                return simplifyClosedCycle(pts)
+            }
+            let n = pts.count
+            let start = nodePositions.first!
+            var chains: [[Int]] = []
+            var cur = [pts[start]]
+            var i = (start + 1) % n
+            while true {
+                cur.append(pts[i])
+                if isNode(pts[i]) {
+                    chains.append(cur)
+                    cur = [pts[i]]
+                }
+                if i == start { break }
+                i = (i + 1) % n
+            }
+            var ring: [Pt] = []
+            for ch in chains where ch.count >= 2 {
+                let simp = simplifyOpenChain(ch)
+                if ring.isEmpty {
+                    ring.append(contentsOf: simp)
+                } else {
+                    ring.append(contentsOf: simp.dropFirst())
+                }
+            }
+            if ring.count > 1, ring.first! == ring.last! { ring.removeLast() }
+            return ring
+        }
+
         // Assemble each loop into a ring using shared chains. When refining, the
         // ring's polygon (`rings`) is the flattened refined path so area/bbox stay
         // consistent with what is rendered.
@@ -234,38 +265,15 @@ public enum PlanarMap {
                         perLabel[loop.label, default: []].append(poly)
                         perLabelRefined[loop.label, default: []].append(rp)
                     }
+                } else {
+                    let ring = legacyRing(pts, nodePositions)
+                    if ring.count >= 3 { perLabel[loop.label, default: []].append(ring) }
                 }
                 continue
             }
 
             // Legacy (no refinement): DP-simplified polygon rings only.
-            var ring: [Pt] = []
-            if nodePositions.isEmpty {
-                ring = simplifyClosedCycle(pts)
-            } else {
-                let start = nodePositions.first!
-                var chains: [[Int]] = []
-                var cur = [pts[start]]
-                var i = (start + 1) % n
-                while true {
-                    cur.append(pts[i])
-                    if isNode(pts[i]) {
-                        chains.append(cur)
-                        cur = [pts[i]]
-                    }
-                    if i == start { break }
-                    i = (i + 1) % n
-                }
-                for ch in chains where ch.count >= 2 {
-                    let simp = simplifyOpenChain(ch)
-                    if ring.isEmpty {
-                        ring.append(contentsOf: simp)
-                    } else {
-                        ring.append(contentsOf: simp.dropFirst())
-                    }
-                }
-                if ring.count > 1, ring.first! == ring.last! { ring.removeLast() }
-            }
+            let ring = legacyRing(pts, nodePositions)
             if ring.count >= 3 { perLabel[loop.label, default: []].append(ring) }
         }
 

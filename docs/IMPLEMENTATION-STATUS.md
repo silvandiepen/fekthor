@@ -1,7 +1,7 @@
 # Implementation status
 
 Living summary of what is actually built, to complement the (aspirational) planning docs.
-Last updated 2026-07-21 (plan 03 — Strokes mode — complete).
+Last updated 2026-07-21 (plan 04 — Shapes mode & logo preset — complete).
 
 ## Architecture
 
@@ -18,13 +18,17 @@ Build: `npm run engine:build` / `engine:test`, `npm run macos:build`. CLI:
 ## Engine (FekthorKit)
 
 Deterministic raster→vector pipeline with a render-back comparison harness (exact-match %,
-mean-abs, PSNR) using CoreGraphics; Vision provides contour tracing.
+mean-abs, PSNR) using CoreGraphics. Region tracing is the shared-edge PlanarMap path; the
+old Vision contour tracer has been removed.
 
 Conversion modes:
 
 - **Shapes** — colour quantization → optional **region merge** (Simplicity) → **shared-edge
   planar map** (adjacent regions share boundary points, so no gaps/seams) → per-shared-chain
-  Douglas-Peucker → Catmull-Rom smoothing. Flat fixture ≈ 96% exact / 38dB PSNR, ~1.8k nodes.
+  geometry refinement and primitive substitution. Logo-tuned auto-colour uses exact bucket
+  modes for byte-exact brand colours, transparent PNGs flow through the label map as a
+  dedicated skipped label, and high-simplicity merging preserves far-distinct tiny accents.
+  Flat fixture baseline: artist-flat/shapes overall 0.726, 502 nodes.
 - **Strokes** — auto-detects line art vs colour. Line art: foreground threshold → Zhang-Suen
   thinning → skeleton-graph tracing → **tangent-based edge merging** (a line crossing another
   stays one stroke) → **per-stroke width** (median of 2×dt from the exact Euclidean distance
@@ -92,6 +96,9 @@ non-determinism (per-process `Set`/`Dictionary` iteration order in `ComponentMer
 - **Detail** — Douglas-Peucker tolerance.
 - **Smoothing** — curve strength (0 polygonal … 1 full; blends fitted cubics toward the chord).
 - **Straighten** — geometry-refinement strength (near-straight runs collapse to single lines).
+- **Logo** (Shapes) — preset toggle that sets Auto colours, tiny-accent colour detection,
+  Simplicity 10%, Detail 85%, Straighten 80% and Smoothing 35%; it does not enable hidden
+  engine behaviour.
 - **Lines from** (Strokes) — Auto / Centreline / Region edges.
 - **Line width** (Strokes) — Auto (per-stroke, dt-estimated) or a fixed width for all lines.
 - **Uniform width** (Strokes) — when Auto, force every stroke to the median width.
@@ -106,12 +113,15 @@ inspector sidebar (controls + result metrics + processing loader), synchronized 
 comparison with click-drag and two-finger pan, pinch + button zoom (−/%/+/Fit), crisp
 high-resolution vector preview, and SVG export.
 
-## Quality (fixtures, 1024 working size, post plan 03)
+## Quality (fixtures, 1024 working size, post plan 04)
 
-Geometry refinement cut node counts 50–60% while holding or lifting fidelity; plan 03 added
-stroke quality without regressing scores:
+Geometry refinement cut node counts 50–60% while holding or lifting fidelity; plans 03–04
+added stroke quality and logo handling without regressing canonical scores:
 
-- Shapes (artist-flat): overall 0.726, ~500 nodes, gap-free, clean lines/curves + `<rect>`s.
+- Shapes (artist-flat): overall 0.726, fidelity 0.833, 502 nodes, gap-free, clean
+  lines/curves + primitives.
+- Shapes (thor-flat): overall 0.393, fidelity 0.501, 5097 nodes; regression floor added at
+  baseline −0.03.
 - Strokes (artist-lineart): overall 0.845, fidelity 0.977 (was 0.976), 68 paths / ~240 nodes;
   per-stroke widths, endpoints reach the drawn tips, junctions gap-free, blob eyes stay filled
   primitives at both resamples. ~0.3s per conversion (budget 1.5s).
@@ -120,12 +130,13 @@ stroke quality without regressing scores:
 
 ## Testing / CI
 
-`swift test` (29 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
+`swift test` (44 tests: geometry, quantize determinism + AA exclusion, stroke edge-merge,
 gradient paint, round-trip fidelity, chamfer/distance-transform known masks, quality
 monotonicity, convert determinism, per-fixture eval regression floors, plus plan 02:
 line/arc/cubic fitting, corner preservation, smoothing=0 polygonal, reverse round-trip,
 arc-direction render, circle/ellipse/rounded-rect primitives, and shared-chain
-point-identity). GitHub Actions builds and tests the engine and builds the macOS app on
+point-identity, plus plan 04: exact palette modes, transparent-label skipping, synthetic
+logo fixtures and high-simplicity small-region preservation). GitHub Actions builds and tests the engine and builds the macOS app on
 `macos-15` (Xcode 16); green on `main`.
 
 ## Next: quality plans
