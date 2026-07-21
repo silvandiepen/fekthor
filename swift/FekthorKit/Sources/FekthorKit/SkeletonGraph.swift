@@ -93,9 +93,14 @@ public enum SkeletonGraph {
             let m = (ax * ax + ay * ay).squareRoot()
             return m < 1e-9 ? (0, 0) : (ax / m, ay / m)
         }
-        // away-from-node direction at an edge end.
+        // Tangent window at a polyline end: ~10px, so that at a shallow
+        // X-crossing the window sees through the short shared middle segment.
+        // That segment's own direction is the average of both crossing lines,
+        // and a 4px window saw only that average — making the exit pick a coin
+        // flip whose wrong outcome spliced the two lines into an S-bend.
+        func windowEnd(_ pts: [Pt]) -> Int { min(pts.count - 1, 10) }
         func awayDir(_ e: [Pt], atStart: Bool) -> (Double, Double) {
-            let k = min(e.count - 1, 4)
+            let k = windowEnd(e)
             if atStart { return unit(e[k].x - e[0].x, e[k].y - e[0].y) }
             let last = e.count - 1
             return unit(e[last - k].x - e[last].x, e[last - k].y - e[last].y)
@@ -202,10 +207,17 @@ public enum SkeletonGraph {
                 let a = awayDir(e, atStart: atStart)
                 let d = t.0 * a.0 + t.1 * a.1
                 if d <= minCos { continue }
+                // Two near-straight pieces meeting at a real angle must stay
+                // two strokes: welding them hands the smoother a sub-corner
+                // bend it renders as an S-swoop. Genuinely continuing straight
+                // lines score ~0.97; only curved ends need the permissive
+                // threshold (their tangents legitimately disagree).
+                let candKappa = curvAway(e, atStart: atStart)
+                if abs(kt) < 0.008, abs(candKappa) < 0.008, d < 0.9 { continue }
                 // `kt` is the chain's curvature along its travel direction;
                 // the continuation, travelling on away from the node, keeps
                 // the same turn sign, so continuity is a direct difference.
-                let score = d - curvWeight * abs(kt - curvAway(e, atStart: atStart))
+                let score = d - curvWeight * abs(kt - candKappa)
                 if score > bestScore {
                     bestScore = score
                     bestDot = d
@@ -240,7 +252,7 @@ public enum SkeletonGraph {
             var chain = edges[start]
             // Extend at the end.
             while chain.count >= 2 {
-                let k = min(chain.count - 1, 4)
+                let k = windowEnd(chain)
                 let last = chain.count - 1
                 let t = unit(chain[last].x - chain[last - k].x, chain[last].y - chain[last - k].y)
                 let kt = chainCurv(chain, towardEnd: true)
@@ -251,7 +263,7 @@ public enum SkeletonGraph {
             }
             // Extend at the start.
             while chain.count >= 2 {
-                let k = min(chain.count - 1, 4)
+                let k = windowEnd(chain)
                 let t = unit(chain[0].x - chain[k].x, chain[0].y - chain[k].y)
                 let kt = chainCurv(chain, towardEnd: false)
                 guard let (ei, atStart) = pick(clusterOf(chain[0]), t, kt) else { break }
