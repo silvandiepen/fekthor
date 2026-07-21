@@ -11,7 +11,10 @@ struct EditCanvasView: View {
     @Binding var offset: CGSize
 
     @State private var selected: Int? = nil
+    @State private var activeAnchor: (path: Int, index: Int)? = nil
     @State private var draggingAnchor: (path: Int, index: Int)? = nil
+    @State private var draggingHandle: (segment: Int, kind: Editing.HandleKind)? = nil
+    @State private var gestureBegan = false
 
     private let hitRadius: CGFloat = 8
 
@@ -54,13 +57,36 @@ struct EditCanvasView: View {
                 }
             }
 
-            // Anchors of the selected element.
+            // Anchors of the selected element; control levers of the active anchor.
             if let sel = selected, sel < doc.elements.count {
+                if let active = activeAnchor {
+                    for h in Editing.handles(
+                        of: doc.elements[sel], path: active.path, anchor: active.index)
+                    {
+                        let hv = CGPoint(x: h.position.x * t.s + t.tx, y: h.position.y * t.s + t.ty)
+                        let av = CGPoint(x: h.anchor.x * t.s + t.tx, y: h.anchor.y * t.s + t.ty)
+                        var lever = Path()
+                        lever.move(to: av)
+                        lever.addLine(to: hv)
+                        ctx.stroke(lever, with: .color(.blue.opacity(0.6)), lineWidth: 1)
+                        let r: CGFloat = 3
+                        let rect = CGRect(x: hv.x - r, y: hv.y - r, width: 2 * r, height: 2 * r)
+                        var diamond = Path()
+                        diamond.move(to: CGPoint(x: hv.x, y: rect.minY))
+                        diamond.addLine(to: CGPoint(x: rect.maxX, y: hv.y))
+                        diamond.addLine(to: CGPoint(x: hv.x, y: rect.maxY))
+                        diamond.addLine(to: CGPoint(x: rect.minX, y: hv.y))
+                        diamond.closeSubpath()
+                        ctx.fill(diamond, with: .color(.blue))
+                    }
+                }
                 for a in Editing.anchors(of: doc.elements[sel]) {
                     let v = CGPoint(x: a.position.x * t.s + t.tx, y: a.position.y * t.s + t.ty)
-                    let r: CGFloat = 3.5
+                    let isActive =
+                        activeAnchor.map { $0.path == a.path && $0.index == a.index } ?? false
+                    let r: CGFloat = isActive ? 4.5 : 3.5
                     let rect = CGRect(x: v.x - r, y: v.y - r, width: 2 * r, height: 2 * r)
-                    ctx.fill(Path(ellipseIn: rect), with: .color(.white))
+                    ctx.fill(Path(ellipseIn: rect), with: .color(isActive ? .blue : .white))
                     ctx.stroke(Path(ellipseIn: rect), with: .color(.blue), lineWidth: 1.5)
                 }
             }
@@ -101,42 +127,70 @@ struct EditCanvasView: View {
             .onChanged { v in
                 guard let doc = model.document else { return }
                 let t = transform(doc: doc, in: size)
-                if draggingAnchor == nil {
-                    // Drag start: grab an anchor of the selected element if the
-                    // press is on one; otherwise this drag is a selection tap.
+                if draggingAnchor == nil, draggingHandle == nil, !gestureBegan {
+                    gestureBegan = true
+                    // Priority: a control handle of the active anchor, then an
+                    // anchor of the selected element; otherwise a selection tap.
                     if let sel = selected, sel < doc.elements.count {
-                        let hit = nearestAnchor(
-                            of: doc.elements[sel], to: v.startLocation, t: t)
-                        if let hit, hit.dist <= hitRadius {
-                            draggingAnchor = (hit.anchor.path, hit.anchor.index)
+                        if let active = activeAnchor {
+                            for h in Editing.handles(
+                                of: doc.elements[sel], path: active.path, anchor: active.index)
+                            {
+                                let hv = CGPoint(
+                                    x: h.position.x * t.s + t.tx, y: h.position.y * t.s + t.ty)
+                                if hypot(hv.x - v.startLocation.x, hv.y - v.startLocation.y)
+                                    <= hitRadius
+                                {
+                                    model.beginEditGesture()
+                                    draggingHandle = (h.segment, h.kind)
+                                    break
+                                }
+                            }
+                        }
+                        if draggingHandle == nil {
+                            let hit = nearestAnchor(
+                                of: doc.elements[sel], to: v.startLocation, t: t)
+                            if let hit, hit.dist <= hitRadius {
+                                model.beginEditGesture()
+                                draggingAnchor = (hit.anchor.path, hit.anchor.index)
+                                activeAnchor = (hit.anchor.path, hit.anchor.index)
+                            }
                         }
                     }
                 }
-                if let d = draggingAnchor, let sel = selected {
-                    model.moveAnchor(
-                        element: sel, path: d.path, anchor: d.index,
-                        to: docPoint(from: v.location, doc: doc, in: size))
+                let target = docPoint(from: v.location, doc: doc, in: size)
+                if let h = draggingHandle, let sel = selected, let active = activeAnchor {
+                    model.moveHandle(
+                        element: sel, path: active.path, segment: h.segment, kind: h.kind,
+                        to: target)
+                } else if let d = draggingAnchor, let sel = selected {
+                    model.moveAnchor(element: sel, path: d.path, anchor: d.index, to: target)
                 }
             }
             .onEnded { v in
-                defer { draggingAnchor = nil }
-                guard draggingAnchor == nil else { return }
-                // A click (no anchor grabbed): select the element whose anchor
-                // set comes closest to the click.
+                let wasEditing = draggingAnchor != nil || draggingHandle != nil
+                draggingAnchor = nil
+                draggingHandle = nil
+                gestureBegan = false
+                guard !wasEditing else { return }
+                // A click (nothing grabbed): select the element / anchor whose
+                // anchor set comes closest to the click.
                 guard let doc = model.document else { return }
                 let t = transform(doc: doc, in: size)
-                var best: (element: Int, dist: CGFloat)? = nil
+                var best: (element: Int, anchor: Editing.Anchor, dist: CGFloat)? = nil
                 for (i, el) in doc.elements.enumerated() {
                     if let hit = nearestAnchor(of: el, to: v.location, t: t) {
                         if best == nil || hit.dist < best!.dist {
-                            best = (i, hit.dist)
+                            best = (i, hit.anchor, hit.dist)
                         }
                     }
                 }
                 if let best, best.dist <= 60 {
                     selected = best.element
+                    activeAnchor = best.dist <= 20 ? (best.anchor.path, best.anchor.index) : nil
                 } else {
                     selected = nil
+                    activeAnchor = nil
                 }
                 model.editGeneration += 1
             }

@@ -61,6 +61,9 @@ final class ConversionModel: ObservableObject {
     /// via editGeneration so the edit canvas invalidates on each change.
     var document: VectorDocument?
     @Published var editGeneration = 0
+    /// Undo history for edit mode: one snapshot per drag gesture.
+    private var undoStack: [VectorDocument] = []
+    @Published var canUndo = false
     @Published var imageGeneration = 0
 
     // Structured result, shown in the inspector.
@@ -296,6 +299,8 @@ final class ConversionModel: ObservableObject {
                     }
                     self.svg = svg
                     self.document = document
+                    self.undoStack = []
+                    self.canUndo = false
                     self.editGeneration += 1
                     self.hasResult = true
                     self.overallQuality = overall
@@ -337,6 +342,31 @@ final class ConversionModel: ObservableObject {
     // MARK: Export / drop
 
     // MARK: Node editing
+
+    /// Snapshot the document at the start of a drag gesture (one undo step
+    /// per gesture, not per mouse-move).
+    func beginEditGesture() {
+        guard let doc = document else { return }
+        undoStack.append(doc)
+        if undoStack.count > 50 { undoStack.removeFirst() }
+        canUndo = true
+    }
+
+    func undoEdit() {
+        guard let doc = undoStack.popLast() else { return }
+        document = doc
+        canUndo = !undoStack.isEmpty
+        editGeneration += 1
+    }
+
+    /// Move one cubic control handle of one element.
+    func moveHandle(element: Int, path: Int, segment: Int, kind: Editing.HandleKind, to: Pt) {
+        guard var doc = document, element < doc.elements.count else { return }
+        doc.elements[element] = Editing.moveHandle(
+            doc.elements[element], path: path, segment: segment, kind: kind, to: to)
+        document = doc
+        editGeneration += 1
+    }
 
     /// Move one anchor of one element; the edit canvas redraws immediately and
     /// the SVG/preview refresh when editing ends.

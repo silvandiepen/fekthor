@@ -162,6 +162,90 @@ public enum Editing {
         }
     }
 
+    // MARK: - Control handles
+
+    public enum HandleKind: Sendable { case c1, c2 }
+
+    /// A cubic control point adjacent to an anchor: the incoming segment's c2
+    /// and/or the outgoing segment's c1.
+    public struct Handle {
+        public var path: Int
+        /// Segment index inside the (cubicized) path.
+        public var segment: Int
+        public var kind: HandleKind
+        public var position: Pt
+        /// The anchor this handle belongs to (for drawing the lever line).
+        public var anchor: Pt
+    }
+
+    /// Control handles adjacent to one anchor. Only cubic segments have
+    /// handles; call after the path has been cubicized (any edit does that).
+    public static func handles(
+        of element: Element, path: Int, anchor: Int
+    ) -> [Handle] {
+        guard let rp = refinedPath(of: element, at: path) else { return [] }
+        let cubed = cubicized(rp)
+        let n = cubed.segments.count
+        var out: [Handle] = []
+        let anchorPos: Pt =
+            anchor == 0
+            ? cubed.start
+            : (anchor - 1 < n ? cubed.segments[anchor - 1].endPoint : cubed.start)
+        // Incoming segment: for anchor 0 on a closed path that's the last one.
+        let incoming = anchor == 0 ? (cubed.closed ? n - 1 : -1) : anchor - 1
+        if incoming >= 0, incoming < n, case .cubic(_, let c2, _) = cubed.segments[incoming] {
+            out.append(
+                Handle(path: path, segment: incoming, kind: .c2, position: c2, anchor: anchorPos))
+        }
+        let outgoing = anchor == 0 ? 0 : anchor
+        if outgoing < n, case .cubic(let c1, _, _) = cubed.segments[outgoing] {
+            out.append(
+                Handle(path: path, segment: outgoing, kind: .c1, position: c1, anchor: anchorPos))
+        }
+        return out
+    }
+
+    /// Move one cubic control point. The element's path is cubicized first, so
+    /// segment indices line up with what `handles(of:path:anchor:)` reported.
+    public static func moveHandle(
+        _ element: Element, path: Int, segment: Int, kind: HandleKind, to: Pt
+    ) -> Element {
+        guard let rp = refinedPath(of: element, at: path) else { return element }
+        var cubed = cubicized(rp)
+        guard segment < cubed.segments.count,
+            case .cubic(let c1, let c2, let end) = cubed.segments[segment]
+        else { return element }
+        cubed.segments[segment] =
+            kind == .c1 ? .cubic(c1: to, c2: c2, to: end) : .cubic(c1: c1, c2: to, to: end)
+        return replacingPath(element, at: path, with: cubed)
+    }
+
+    static func refinedPath(of element: Element, at path: Int) -> RefinedPath? {
+        switch element {
+        case .stroke(let s): return path == 0 ? s.refined : nil
+        case .fill(let f):
+            if case .refined(let paths) = f.geometry, path < paths.count { return paths[path] }
+            return nil
+        }
+    }
+
+    static func replacingPath(_ element: Element, at path: Int, with rp: RefinedPath) -> Element {
+        switch element {
+        case .stroke(var s):
+            if path == 0 {
+                s.refined = rp
+                s.points = PathRefine.flatten(rp)
+            }
+            return .stroke(s)
+        case .fill(var f):
+            if case .refined(var paths) = f.geometry, path < paths.count {
+                paths[path] = rp
+                f.geometry = .refined(paths)
+            }
+            return .fill(f)
+        }
+    }
+
     // MARK: - Arc degrade
 
     /// Replace every arc with cubic Bézier spans (≤90° each, k = 4/3·tan(θ/4)):

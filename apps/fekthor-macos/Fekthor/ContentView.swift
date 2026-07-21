@@ -55,6 +55,13 @@ struct ContentView: View {
                     offset = .zero
                 } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
             }
+            if model.editMode {
+                Button { model.undoEdit() } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!model.canUndo)
+            }
             Button {
                 if model.editMode {
                     model.finishEditing()
