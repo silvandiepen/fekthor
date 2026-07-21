@@ -124,6 +124,15 @@ private struct ComparisonView: View {
     let busy: Bool
     @Binding var zoom: CGFloat
     @Binding var offset: CGSize
+    @State private var mode: CompareMode = .split
+    @State private var overlayOpacity: Double = 0.5
+    @State private var wipe: CGFloat = 0.5
+
+    enum CompareMode: String, CaseIterable {
+        case split = "Split"
+        case overlay = "Overlay"
+        case wipe = "Wipe"
+    }
 
     private func setZoom(_ z: CGFloat) { zoom = min(24, max(1, z)) }
     private func reset() {
@@ -134,9 +143,35 @@ private struct ComparisonView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                HSplitView {
-                    pane(title: "Source", image: source, busy: false)
-                    pane(title: "Vector", image: vector, busy: busy)
+                Group {
+                    switch mode {
+                    case .split:
+                        HSplitView {
+                            pane(title: "Source", image: source, busy: false)
+                            pane(title: "Vector", image: vector, busy: busy)
+                        }
+                    case .overlay:
+                        singleCanvas { size in
+                            ZStack {
+                                imageLayer(source, in: size)
+                                imageLayer(vector, in: size)
+                                    .opacity(overlayOpacity)
+                                    .opacity(busy ? 0.5 : 1)
+                            }
+                        }
+                    case .wipe:
+                        singleCanvas { size in
+                            ZStack {
+                                imageLayer(source, in: size)
+                                imageLayer(vector, in: size)
+                                    .opacity(busy ? 0.5 : 1)
+                                    .mask(alignment: .leading) {
+                                        Rectangle()
+                                            .frame(width: max(0, size.width * wipe))
+                                    }
+                            }
+                        }
+                    }
                 }
                 .overlay(
                     TrackpadCatcher(
@@ -147,16 +182,26 @@ private struct ComparisonView: View {
                         onDoubleClick: { p in zoomIn(at: p, in: geo.size) }
                     )
                 )
+                if mode == .wipe {
+                    wipeDivider(in: geo.size)
+                }
                 zoomControls
             }
         }
     }
 
     /// Double-click: zoom in one step, anchored at the clicked point (mapped to
-    /// its pane — both panes share the transform, so they stay in lockstep).
+    /// its pane — panes share the transform, so they stay in lockstep).
     private func zoomIn(at p: CGPoint, in size: CGSize) {
-        let paneW = size.width / 2
-        let localX = p.x >= paneW ? p.x - paneW : p.x
+        let localX: CGFloat
+        let paneW: CGFloat
+        if mode == .split {
+            paneW = size.width / 2
+            localX = p.x >= paneW ? p.x - paneW : p.x
+        } else {
+            paneW = size.width
+            localX = p.x
+        }
         let click = CGSize(width: localX - paneW / 2, height: p.y - size.height / 2)
         let newZoom = min(24, zoom * 1.6)
         let k = newZoom / zoom
@@ -166,8 +211,77 @@ private struct ComparisonView: View {
         zoom = newZoom
     }
 
+    /// The draggable wipe divider sits ABOVE the trackpad catcher so its drag
+    /// wins over click-drag panning.
+    private func wipeDivider(in size: CGSize) -> some View {
+        let x = size.width * wipe
+        return ZStack {
+            Rectangle().fill(.white).frame(width: 2)
+                .shadow(color: .black.opacity(0.5), radius: 2)
+            Image(systemName: "arrow.left.and.right.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.black, .white)
+        }
+        .frame(width: 24)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .position(x: x, y: size.height / 2)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { v in
+                    wipe = min(0.99, max(0.01, v.location.x / size.width))
+                }
+        )
+    }
+
+    private func singleCanvas(@ViewBuilder content: @escaping (CGSize) -> some View) -> some View
+    {
+        VStack(spacing: 0) {
+            HStack {
+                Text(mode == .overlay ? "Overlay" : "Wipe").font(.headline)
+                Spacer()
+                if mode == .overlay {
+                    Slider(value: $overlayOpacity, in: 0...1)
+                        .frame(width: 140)
+                        .controlSize(.small)
+                }
+            }
+            .padding(8)
+            GeometryReader { inner in
+                ZStack {
+                    Rectangle().fill(Color(nsColor: .textBackgroundColor))
+                    content(inner.size)
+                }
+                .clipped()
+            }
+        }
+        .frame(minWidth: 300, minHeight: 340)
+    }
+
+    @ViewBuilder
+    private func imageLayer(_ image: NSImage?, in size: CGSize) -> some View {
+        if let image {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .scaleEffect(zoom)
+                .offset(offset)
+                .frame(width: size.width, height: size.height)
+        }
+    }
+
     private var zoomControls: some View {
         HStack(spacing: 2) {
+            Picker("", selection: $mode) {
+                ForEach(CompareMode.allCases, id: \.self) { m in
+                    Text(m.rawValue).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
+            Divider().frame(height: 16)
             Button { setZoom(zoom / 1.25) } label: { Image(systemName: "minus") }
             Text("\(Int(zoom * 100))%").font(.callout.monospacedDigit()).frame(width: 52)
             Button { setZoom(zoom * 1.25) } label: { Image(systemName: "plus") }
