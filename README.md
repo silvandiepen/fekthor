@@ -72,7 +72,7 @@ native application, editing tools, release hardening and optional AI).
 
 ## Current status
 
-The complete product and engineering plan is documented. Implementation should begin with the fixture-driven research foundation and deterministic centreline spike before substantial UI or AI work.
+The engine and macOS app are built and functional: all four conversion modes (Auto/Shapes/Strokes/Gradient) with mode-aware quality scoring, a deterministic eval harness with regression floors, and a SwiftUI app with synchronized Split/Overlay/Wipe comparison, Auto-tune settings search, opt-in variable-width stroke envelopes, node editing (select shapes, drag anchors and Bézier control handles, undo), on-device Real-ESRGAN enhancement for small sources, and SVG export. See [Implementation status](docs/IMPLEMENTATION-STATUS.md) for the full picture.
 
 ## Licensing
 

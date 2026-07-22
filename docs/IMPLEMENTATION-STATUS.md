@@ -1,7 +1,7 @@
 # Implementation status
 
 Living summary of what is actually built, to complement the (aspirational) planning docs.
-Last updated 2026-07-21 (plans 01–07 — quality plan set complete).
+Last updated 2026-07-22 (post-plan quality loop + editing/compare/auto-tune features).
 
 ## Architecture
 
@@ -15,6 +15,52 @@ Native Swift monorepo (see revised D-004):
 Build: `npm run engine:build` / `engine:test`, `npm run macos:build`. CLI:
 `fekthor process <image> [--mode auto|shapes|strokes|gradient] [--colors N] [--epsilon E] [--out DIR]`;
 `auto` is the default.
+
+## Quality-loop session (2026-07-21/22)
+
+Iterative per-class quality passes over the four canonical image types (line art,
+flat, logo, 3D), each landed as an independent verified commit:
+
+- **Auto-routing**: `fekthor detect` subcommand prints every Stage-A classifier
+  feature; new `flatCoverage24` + `bandiness` features and a soft-flat gate route
+  rich-palette AI flat art to Shapes (it previously fell into Gradient).
+- **Colour**: painted soft shadows survive AA pruning via a spatial near-edge test
+  (AA hugs strong edges; shadows do not); large away-from-edge near-tones join the
+  palette at a reduced separation floor (flat beard two-tone at low Simplicity).
+- **Path refinement**: arc fits are validated against the polyline as well as
+  points-to-circle, killing degenerate half-disc/D-ring artifacts from
+  ill-conditioned Kåsa fits on straight edges (every fixture improved).
+- **Strokes welding**: junction node clusters are unioned (1px radius) so all ends
+  of one visual junction compete; continuations score tangent dot minus a
+  curvature-continuity penalty with a rivalry veto; ~10px tangent windows see
+  through the shared middle segment of shallow X-crossings; near-straight pairs
+  only weld above dot 0.9. Junction hooks/dog-legs on stripes are gone.
+- **Gradient (3D class)**: texture-adaptive Kuwahara flattening (pass count from a
+  measured texture-density score; smooth paintings untouched), radial-quadratic
+  moment model for border-region merges (vignette rings coalesce into one
+  background shape), colour-gated speckle absorption, doubled stops + bounded
+  radial-centre search for large regions. thor-3d: 721 → 176 paths. Documented
+  ceiling: micro-texture floors PSNR ~21 dB for any smooth vector output; a
+  structural-fidelity Quality term is an open product decision.
+
+## App/tooling features (same session)
+
+- **Compare modes**: Split / Overlay (opacity slider) / Wipe (draggable divider),
+  sharing one synchronized zoom/pan transform.
+- **Auto-tune**: deterministic 36-point grid search over Detail/Simplicity/
+  Smoothing on a 384px thumbnail, scored by the mode-aware Quality metric; the
+  sliders move to the winner (~2.7s).
+- **Variable-width stroke envelopes** (opt-in): strokes whose dt-width profile
+  genuinely varies (p90/p10 ≥ 1.45, ≥ 1.5px) become one smooth closed outline
+  fill following the drawn width — Illustrator width-profile semantics. CLI
+  `--variable-width`, app toggle beside Taper.
+- **Node editing V1**: engine-side anchor model (`Editing.swift`, unit-tested) —
+  enumerate/move anchors with control points following, arc→cubic degrade on
+  first edit, closed seams stay welded; app Edit mode with click-select, anchor
+  drags, Bézier control-handle levers, per-gesture undo (⌘Z, 50 steps), and
+  Done regenerating SVG + preview from the edited document.
+- **CLI**: `fekthor detect <input>` (classifier features), `--scale` debug render,
+  `--variable-width`.
 
 ## Engine (FekthorKit)
 
