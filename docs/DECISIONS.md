@@ -54,9 +54,9 @@ Import, processing, editing, project saving and export work without a network co
 
 ## D-007 — Project format is richer than SVG
 
-**Status:** Accepted
+**Status:** Revised 2026-07-22 by D-022 (editor pivot)
 
-Fekthor uses a native `.fekthor` package containing source, settings, classifications, edits and vector geometry. SVG is an export format.
+Fekthor uses a native `.fekthor` file for what SVG cannot hold. Since the editor pivot, plain `.svg` files are first-class documents (opened and saved in place), and `.fekthor` is a Codable-JSON **workfile** for workspace configuration; see D-022.
 
 **Reasoning:** SVG cannot reliably represent all raster evidence, uncertainty, recomputation state and non-destructive edits required by the product.
 
@@ -142,7 +142,7 @@ Curve refinement balances rendered error against path and node complexity.
 
 ## D-018 — Manual editing is secondary to interpretation correction
 
-**Status:** Accepted
+**Status:** Revised 2026-07-22 by D-021 (editor pivot): manual vector editing is now a primary product capability; interpretation correction remains the priority inside the trace feature.
 
 The product provides node editing, but prioritises region reclassification, cuts, joins and cleanup-mask tools.
 
@@ -163,6 +163,30 @@ Preprocessing creates masks and derived images rather than altering the original
 Unchanged regions and elements retain stable IDs where possible.
 
 **Reasoning:** Stable IDs support selection, undo, incremental export, regression testing and user confidence that a local change did not rewrite the complete document.
+
+## D-021 — Editor-first product (the editor pivot)
+
+**Status:** Accepted 2026-07-22
+
+Fekthor is a vector editor — "Illustrator basics, but better" — whose flagship use case is icon-set/workspace management. Raster tracing remains one big feature, not the product definition. Sequencing is workspace-first: P0 foundation → P1 workspace → P2 export profiles + containers → P3 tokens → P4 editor core → P5 pen/booleans → P6 interchange (`docs/plans/08-editor-p0.md`). The owner's **open-icon** set is the explicit acceptance yardstick. On-device AI icon generation is logged as far-future, after workspace + editor.
+
+**Reasoning:** The proven engine (plans 01–07) plus editing toolkit already form most of an editor; the highest-value real workflow is managing an existing icon set, which exercises exactly the clean-SVG/round-trip strengths the engine has.
+
+## D-022 — File formats: clean `.svg` + `.fekthor` JSON workfile, normalise-on-first-save
+
+**Status:** Accepted 2026-07-22 (revises D-007)
+
+Plain `.svg` holds geometry and is always written clean: a lone SVG opens and saves in place. The `.fekthor` file is a Codable-JSON workfile holding workspace configuration (folder reference, categories, artboard metadata, export profiles, style tokens, container slots) and may embed artboards as SVG text for self-contained documents. Save contract: **normalise on first save** (semantic equality with the source, idempotent thereafter — `write(read(write(read(f)))) == write(read(f))`), and Fekthor only ever writes files the user actually edited.
+
+**Reasoning:** Icon workspaces are folders of SVGs owned by other tools too; a database format would hold them hostage. Idempotent, semantically-equal saves keep diffs reviewable and make the editor trustworthy on a real repository.
+
+## D-023 — Style tokens bind by colour-slot matching; containers are slot rects
+
+**Status:** Accepted 2026-07-22
+
+Workspace style tokens bind to geometry by **colour-slot matching** (e.g. outline = `#010101`, accent = `#ed2024`), not by path ids. A container is a normal SVG in the workspace plus a slot rect (position + fit rule) stored in the workfile; content icons declare container memberships and export composes the matrix (`{icon}-{container}.svg`).
+
+**Reasoning:** Colour slots survive editing, renaming and regeneration where path ids do not, and they match how the open-icon corpus already encodes semantics. Slot-rect containers reuse plain SVG for the container art, keeping the workfile small and the format inspectable.
 
 ## Open decisions
 

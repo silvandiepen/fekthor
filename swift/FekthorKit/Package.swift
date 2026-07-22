@@ -20,6 +20,8 @@ let package = Package(
             name: "FekthorKit",
             swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]),
         .executableTarget(name: "fekthor", dependencies: ["FekthorKit"]),
-        .testTarget(name: "FekthorKitTests", dependencies: ["FekthorKit"]),
+        .testTarget(
+            name: "FekthorKitTests", dependencies: ["FekthorKit"],
+            resources: [.copy("Fixtures")]),
     ]
 )

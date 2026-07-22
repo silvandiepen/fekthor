@@ -30,37 +30,34 @@ Visual similarity alone is not sufficient. Topology, node count, path structure 
 
 ## Current implementation priority
 
-Follow the first implementation backlog in `docs/ROADMAP.md`.
+The tracing quality plans (`docs/plans/01…07`) are implemented. The active
+backlog is the **editor pivot**: `docs/plans/08-editor-p0.md` (editor-first
+product, icon-set workspace management, tracing as one feature).
 
 Do not begin with:
 
 - AI integration.
-- A large macOS application shell.
 - Cloud services.
 - Accounts or sync.
-- Extensive export formats.
-- A complete vector editor.
+- Extensive export formats beyond what plan 08 names.
 
-Begin with the Rust research core, fixtures, diagnostics, graph extraction, width estimation, Bézier fitting and SVG render-back comparison.
-
-## Proposed repository structure
+## Repository structure
 
 ```text
 fekthor/
 ├── apps/
-│   └── macos/
-├── crates/
-│   ├── fekthor-core/
-│   ├── fekthor-cli/
-│   ├── fekthor-svg/
-│   └── fekthor-testkit/
+│   └── fekthor-macos/       # SwiftUI app (xcodegen project)
+├── swift/
+│   └── FekthorKit/          # UI-free engine + headless `fekthor` CLI (SwiftPM)
 ├── docs/
+│   └── plans/               # executable quality/feature plans (01…)
 ├── fixtures/
-├── scripts/
 └── .github/workflows/
 ```
 
-Do not create duplicate geometry models in Swift and Rust. The Rust document model is authoritative; Swift receives stable DTOs and sends semantic commands.
+Do not create duplicate geometry models. The `FekthorKit` document model
+(`Document.swift`, `PathRefine.swift`, `Model2.swift`) is authoritative; the
+app renders it and sends semantic commands (see revised D-004).
 
 ## Engineering rules
 
@@ -119,17 +116,6 @@ Do not create duplicate geometry models in Swift and Rust. The Rust document mod
 - Keep lockfiles committed.
 
 ## Coding style
-
-### Rust
-
-- Use stable Rust unless an accepted decision requires nightly.
-- Format with `rustfmt`.
-- Lint with Clippy and treat relevant warnings as errors in CI.
-- Keep unsafe code isolated, documented and tested.
-- Prefer explicit domain types over tuples for coordinates, widths, IDs and revisions.
-- Use newtypes for identifiers.
-- Document invariants on topology and geometry structures.
-- Avoid hidden global state.
 
 ### Swift
 

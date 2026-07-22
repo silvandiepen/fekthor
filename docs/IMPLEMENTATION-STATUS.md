@@ -232,6 +232,13 @@ Auto mode and Flatten. CI polling/pushes are handled by the orchestrator after l
 
 ## Known gaps / next
 
+- **Editor pivot (active):** Fekthor becomes an editor-first product; the P0
+  foundation (Model v2, SVG reader/writer round-trip, workfile, editor
+  session/canvas, File menu) is specified in
+  [`plans/08-editor-p0.md`](plans/08-editor-p0.md) and decisions D-021…D-023.
+  The trace-editing batch developed on imageKid's `feat/fekthor-trace` branch
+  still needs porting into this repo (plan 08, step 0b).
 - Gradient node counts are high on photo-like inputs (band boundaries).
 - Bezier-native document (store curves, not just resampled points).
-- `.fekthor` project format, undo/redo, and region-level correction UI are not yet implemented.
+- `.fekthor` workfile v1 exists engine-side once plan 08 step 8 lands; undo/redo
+  beyond snapshots and region-level correction UI are not yet implemented.
