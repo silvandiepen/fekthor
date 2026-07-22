@@ -80,11 +80,19 @@ public enum SVGReader {
 
     // MARK: - Tree conversion
 
+    /// Serialise a node for raw passthrough. The whitespace envelope is
+    /// trimmed: XMLDocument attaches the surrounding indentation to the
+    /// serialised node, and keeping it would grow a fresh "\n  " prefix on
+    /// every read→write cycle, breaking idempotence. The writer re-indents.
+    static func rawXML(_ node: XMLNode) -> String {
+        node.xmlString.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func convert(_ node: XMLNode, classMap: [String: [StyleDeclaration]]) -> GraphicNode? {
         switch node.kind {
         case .element:
             guard let element = node as? XMLElement else {
-                return .raw(RawNode(xml: node.xmlString))
+                return .raw(RawNode(xml: rawXML(node)))
             }
             let name = elementName(element)
             if shapeElements.contains(name) {
@@ -93,7 +101,7 @@ public enum SVGReader {
                 }
                 // Unparseable geometry: carry the element verbatim instead of
                 // guessing — fidelity beats coverage.
-                return .raw(RawNode(xml: node.xmlString))
+                return .raw(RawNode(xml: rawXML(node)))
             }
             if name == "g" {
                 let parts = styleAndAttributes(element, geometryNames: [], classMap: classMap)
@@ -106,13 +114,13 @@ public enum SVGReader {
                         style: parts.style, attributes: parts.attributes,
                         transform: parts.transform, children: children))
             }
-            return .raw(RawNode(xml: node.xmlString))
+            return .raw(RawNode(xml: rawXML(node)))
         case .text:
             let text = node.stringValue ?? ""
             if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
-            return .raw(RawNode(xml: node.xmlString))
+            return .raw(RawNode(xml: rawXML(node)))
         default:
-            return .raw(RawNode(xml: node.xmlString))
+            return .raw(RawNode(xml: rawXML(node)))
         }
     }
 
