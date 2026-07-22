@@ -1,5 +1,14 @@
 # Roadmap
 
+> **2026-07-22 — editor pivot.** With the tracing engine proven (quality plans
+> 01–07 complete), Fekthor pivots to an **editor-first** product: a vector
+> editor whose flagship use case is icon-set/workspace management, with
+> tracing as one big feature. The active roadmap is now
+> [`plans/08-editor-p0.md`](plans/08-editor-p0.md) (P0 foundation → P1
+> workspace → P2 export profiles + containers → P3 tokens → P4 editor core →
+> P5 pen/booleans → P6 interchange). The phases below are the original
+> tracing-first roadmap, kept for the engine milestones that remain relevant.
+
 The roadmap is quality-first. Fekthor should not begin with a polished application shell around an unproven tracing engine. The first milestone is a measurable centreline-vectorisation prototype with diagnostics and fixtures.
 
 ## Phase 0 — Repository and research foundation
