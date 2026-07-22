@@ -1,3 +1,13 @@
+> **⚠️ DEPRECATED — this repository has moved.**
+>
+> Fekthor now lives in the **ImageKid monorepo**:
+> [github.com/silvandiepen/ImageKid](https://github.com/silvandiepen/ImageKid)
+> — app target `Fekthor` (`apps/native-macos/Sources/FekthorTrace`), engine at
+> `packages/FekthorKit`, product plan at `docs/fekthor/EDITOR-PLAN.md`.
+> Fekthor is now a vector editor first; tracing (this repo's original scope)
+> is one of its features. This repository is kept for history only; no new
+> work lands here.
+
 # Fekthor
 
 Fekthor is a native raster-to-vector application focused on producing **clean, editable vectors**, not merely tracing the outside edge of every dark pixel.
