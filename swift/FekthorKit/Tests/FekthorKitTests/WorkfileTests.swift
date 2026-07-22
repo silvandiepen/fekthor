@@ -75,4 +75,15 @@ final class WorkfileTests: XCTestCase {
         let workfile = try Workfile.decode(Data("{\"version\": 1}".utf8))
         XCTAssertEqual(workfile, Workfile())
     }
+
+    func testNewerVersionIsRejectedNotDowngraded() {
+        // Decoding a v2 file leniently and re-saving would strip its newer
+        // sections; the decoder must refuse instead.
+        let json = "{\"version\": 2, \"futureSection\": {\"important\": true}}"
+        XCTAssertThrowsError(try Workfile.decode(Data(json.utf8))) { error in
+            XCTAssertEqual(
+                error as? Workfile.UnsupportedVersionError,
+                Workfile.UnsupportedVersionError(version: 2))
+        }
+    }
 }

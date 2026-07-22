@@ -53,7 +53,15 @@ public enum SVGReader {
         let hadDeclaration = sourceText
             .drop(while: { $0 == "\u{FEFF}" || $0.isWhitespace })
             .hasPrefix("<?xml")
-        let rootAttributes = rootAttributeList(root)
+        var rootAttributes = rootAttributeList(root)
+        // A namespace-prefixed root (<svg:svg>) is written unprefixed, so the
+        // saved document needs the default SVG namespace declared or it would
+        // stop being an SVG.
+        if (root.name ?? "").contains(":"),
+            !rootAttributes.contains(where: { $0.name == "xmlns" })
+        {
+            rootAttributes.append(SVGAttribute("xmlns", "http://www.w3.org/2000/svg"))
+        }
         var viewBox: ViewBox? = nil
         if let vb = rootAttributes.first(where: { $0.name == "viewBox" }) {
             let parts = vb.value
@@ -172,6 +180,17 @@ public enum SVGReader {
     static func convertShape(
         _ element: XMLElement, name: String, classMap: [String: [StyleDeclaration]]
     ) throws -> ShapeNode {
+        // A shape with child content (<title>, <desc>, <animate>, …) is beyond
+        // the typed model — converting just the geometry would silently drop
+        // the children on save. Fall back to verbatim raw passthrough instead.
+        let hasContent = (element.children ?? []).contains { child in
+            if child.kind == .text {
+                let text = child.stringValue ?? ""
+                return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            return true
+        }
+        if hasContent { throw GeometryError() }
         let kind: ShapeKind
         let geometryNames: Set<String>
         switch name {

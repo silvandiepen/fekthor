@@ -108,6 +108,11 @@ public enum SVGPathData {
                     // Implicit repeat; extra moveto pairs continue as lineto.
                     if command == "M" { command = "L" }
                     if command == "m" { command = "l" }
+                    // Closepath takes no parameters, so a repeat can never
+                    // consume the token — reject instead of looping forever.
+                    if command == "Z" || command == "z" {
+                        throw ParseError(message: "unexpected token after closepath at index \(i)")
+                    }
                 }
                 try apply(command)
             }

@@ -111,6 +111,24 @@ public struct Workfile: Codable, Equatable, Sendable {
     }
 
     public static func decode(_ data: Data) throws -> Workfile {
-        try JSONDecoder().decode(Workfile.self, from: data)
+        let workfile = try JSONDecoder().decode(Workfile.self, from: data)
+        // A newer workfile decoded leniently would drop its unknown sections
+        // on the next save. Refuse it instead: forward compatibility means
+        // tolerating unknown keys within a version, not silently downgrading
+        // across versions.
+        guard workfile.version <= currentVersion else {
+            throw UnsupportedVersionError(version: workfile.version)
+        }
+        return workfile
+    }
+
+    public struct UnsupportedVersionError: Error, CustomStringConvertible, Equatable {
+        public var version: Int
+        public init(version: Int) {
+            self.version = version
+        }
+        public var description: String {
+            "workfile version \(version) is newer than this app supports (\(Workfile.currentVersion))"
+        }
     }
 }

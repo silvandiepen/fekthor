@@ -123,10 +123,12 @@ public enum SVGStyle {
     // MARK: - Declaration lists
 
     /// Parse `"stroke:#010101;stroke-width:1.5"`. Unknown properties keep
-    /// their verbatim (trimmed) value.
+    /// their verbatim (trimmed) value. Declaration boundaries respect quotes,
+    /// escapes and parentheses, so a `;` inside `url(data:…;base64,…)` or
+    /// `font-family:'A;B'` never truncates a value.
     public static func parseDeclarations(_ css: String, origin: StyleOrigin) -> [StyleDeclaration] {
         var out: [StyleDeclaration] = []
-        for chunk in css.split(separator: ";") {
+        for chunk in splitTopLevel(css, on: ";") {
             guard let colon = chunk.firstIndex(of: ":") else { continue }
             let property = chunk[..<colon].trimmingCharacters(in: .whitespacesAndNewlines)
             let valueText = chunk[chunk.index(after: colon)...]
@@ -136,6 +138,48 @@ public enum SVGStyle {
                 StyleDeclaration(
                     property, value(property: property, string: valueText), origin: origin))
         }
+        return out
+    }
+
+    /// Split on a separator only where it is outside quotes, backslash
+    /// escapes and parentheses.
+    static func splitTopLevel(_ text: String, on separator: Character) -> [String] {
+        var out: [String] = []
+        var current = ""
+        var inSingle = false
+        var inDouble = false
+        var depth = 0
+        var escaped = false
+        for ch in text {
+            if escaped {
+                current.append(ch)
+                escaped = false
+                continue
+            }
+            switch ch {
+            case "\\":
+                current.append(ch)
+                escaped = true
+            case "'" where !inDouble:
+                inSingle.toggle()
+                current.append(ch)
+            case "\"" where !inSingle:
+                inDouble.toggle()
+                current.append(ch)
+            case "(" where !inSingle && !inDouble:
+                depth += 1
+                current.append(ch)
+            case ")" where !inSingle && !inDouble:
+                depth = max(0, depth - 1)
+                current.append(ch)
+            case separator where !inSingle && !inDouble && depth == 0:
+                out.append(current)
+                current = ""
+            default:
+                current.append(ch)
+            }
+        }
+        out.append(current)
         return out
     }
 

@@ -157,6 +157,34 @@ final class SVGReaderTests: XCTestCase {
         XCTAssertThrowsError(try SVGReader.read("not xml at all"))
     }
 
+    func testShapeWithChildContentFallsBackToRaw() throws {
+        // <title>/<animate> children are beyond the typed model; the whole
+        // element must survive verbatim rather than lose its children on save.
+        let src = """
+            <svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L2 2"><title>Accessible name</title></path></svg>
+            """
+        let doc = try SVGReader.read(src)
+        guard case .raw(let raw) = doc.nodes[0] else { return XCTFail("expected raw fallback") }
+        XCTAssertTrue(raw.xml.contains("<title>Accessible name</title>"))
+        let out = SVGWriter.write(doc)
+        XCTAssertTrue(out.contains("Accessible name"))
+        XCTAssertEqual(out, SVGWriter.write(try SVGReader.read(out)))
+    }
+
+    func testNamespacePrefixedRootGainsDefaultNamespace() throws {
+        let src = """
+            <svg:svg xmlns:svg="http://www.w3.org/2000/svg"><svg:path d="M0 0L2 2"/></svg:svg>
+            """
+        let doc = try SVGReader.read(src)
+        // The root is written unprefixed, so the default namespace must be
+        // declared for the saved file to remain an SVG.
+        XCTAssertTrue(
+            doc.rootAttributes.contains(SVGAttribute("xmlns", "http://www.w3.org/2000/svg")))
+        let out = SVGWriter.write(doc)
+        XCTAssertTrue(out.contains("xmlns=\"http://www.w3.org/2000/svg\""))
+        XCTAssertNoThrow(try SVGReader.read(out))
+    }
+
     func testUnknownAttributesSurviveAsLeftovers() throws {
         let doc = try SVGReader.read(
             """

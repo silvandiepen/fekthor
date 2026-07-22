@@ -166,6 +166,9 @@ final class SVGPathDataTests: XCTestCase {
         XCTAssertThrowsError(try SVGPathData.parse("L10 0"))
         XCTAssertThrowsError(try SVGPathData.parse("M0 0X9"))
         XCTAssertThrowsError(try SVGPathData.parse("M0 0L"))
+        // Parameters after closepath must error, not loop forever.
+        XCTAssertThrowsError(try SVGPathData.parse("M0 0Z1"))
+        XCTAssertThrowsError(try SVGPathData.parse("M0 0L5 5z 3 4"))
     }
 
     // MARK: - Serialisation
@@ -256,6 +259,21 @@ final class SVGStyleTests: XCTestCase {
             let declarations = SVGStyle.parseDeclarations(css, origin: .inlineStyle)
             XCTAssertEqual(SVGStyle.serializeInline(declarations), css, css)
         }
+    }
+
+    func testSemicolonsInsideValuesDoNotSplitDeclarations() {
+        let css = "fill:url(data:image/png;base64,AA==);stroke:#010101"
+        let declarations = SVGStyle.parseDeclarations(css, origin: .inlineStyle)
+        XCTAssertEqual(declarations.count, 2)
+        XCTAssertEqual(
+            declarations[0].value, StyleValue.raw("url(data:image/png;base64,AA==)"))
+        XCTAssertEqual(SVGStyle.serializeInline(declarations), css)
+
+        let quoted = "font-family:'A;B';stroke:#010101"
+        let quotedDeclarations = SVGStyle.parseDeclarations(quoted, origin: .inlineStyle)
+        XCTAssertEqual(quotedDeclarations.count, 2)
+        XCTAssertEqual(quotedDeclarations[0].value, StyleValue.raw("'A;B'"))
+        XCTAssertEqual(SVGStyle.serializeInline(quotedDeclarations), quoted)
     }
 
     func testStylesheetClassRules() {
