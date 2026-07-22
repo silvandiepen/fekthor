@@ -53,7 +53,7 @@ public enum SVGReader {
         let hadDeclaration = sourceText
             .drop(while: { $0 == "\u{FEFF}" || $0.isWhitespace })
             .hasPrefix("<?xml")
-        let rootAttributes = attributeList(root)
+        let rootAttributes = rootAttributeList(root)
         var viewBox: ViewBox? = nil
         if let vb = rootAttributes.first(where: { $0.name == "viewBox" }) {
             let parts = vb.value
@@ -250,6 +250,23 @@ public enum SVGReader {
         (element.attributes ?? []).map {
             SVGAttribute($0.name ?? "", $0.stringValue ?? "")
         }
+    }
+
+    /// XMLDocument surfaces `xmlns`/`xmlns:*` declarations as namespace nodes,
+    /// not attributes — merge them back in (namespaces first, canonically) so
+    /// the written root keeps the declarations browsers require.
+    static func rootAttributeList(_ element: XMLElement) -> [SVGAttribute] {
+        var out: [SVGAttribute] = []
+        for ns in element.namespaces ?? [] {
+            let prefix = ns.name ?? ""
+            let name = prefix.isEmpty ? "xmlns" : "xmlns:" + prefix
+            out.append(SVGAttribute(name, ns.stringValue ?? ""))
+        }
+        // Guard against platforms that also list xmlns among the attributes.
+        out += attributeList(element).filter { attr in
+            !attr.name.hasPrefix("xmlns") || !out.contains(where: { $0.name == attr.name })
+        }
+        return out
     }
 
     static func collectStylesheets(

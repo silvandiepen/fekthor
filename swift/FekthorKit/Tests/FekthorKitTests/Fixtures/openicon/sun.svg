@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <circle cx="12" cy="12" r="4" style="fill:none;stroke:#010101;stroke-width:1.5"/>
+  <line x1="12" y1="2" x2="12" y2="5" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+  <line x1="12" y1="19" x2="12" y2="22" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+  <line x1="2" y1="12" x2="5" y2="12" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+  <line x1="19" y1="12" x2="22" y2="12" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+  <g transform="rotate(45 12 12)">
+    <line x1="12" y1="2" x2="12" y2="5" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+    <line x1="12" y1="19" x2="12" y2="22" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+    <line x1="2" y1="12" x2="5" y2="12" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+    <line x1="19" y1="12" x2="22" y2="12" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+  </g>
+</svg>

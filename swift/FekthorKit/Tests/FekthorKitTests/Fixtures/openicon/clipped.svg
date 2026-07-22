@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <defs><clipPath id="frame"><rect width="24" height="24"/></clipPath></defs>
+  <path d="M4 4L20 20" clip-path="url(#frame)" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+  <path d="M20 4L4 20" clip-path="url(#frame)" style="fill:none;stroke:#010101;stroke-width:1.5;stroke-linecap:round"/>
+</svg>
